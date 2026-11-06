@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<!-- A made-up page with the table shapes of published settings and requirements pages. All text is invented. -->
+<html lang="en-us">
+    <head><title>Widget Settings</title></head>
+    <body>
+        <div role="main" id="mc-main-content">
+            <h1>Widget Settings</h1>
+            <h2 id="General">General Settings</h2>
+            <table>
+                <thead>
+                    <tr><th>Setting</th><th>Description</th><th>Default</th><th>Valid Values</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="4" class="Subheading">Network</td></tr>
+                    <tr><td><b>Listen Port</b></td><td>The port the widget listens on.</td><td>8443</td><td>1-65535</td></tr>
+                    <tr><td><span class="Code">max_hosts</span></td><td>How many hosts to track.</td><td>500</td><td></td></tr>
+                    <tr><td></td><td>A row with no setting name is skipped.</td><td></td><td></td></tr>
+                </tbody>
+            </table>
+            <h2 id="UI">Interface Fields</h2>
+            <table>
+                <thead>
+                    <tr><th>Widget Hub UI Field</th><th>Required?</th><th>Action</th><th>Notes</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Name</td><td>Yes</td><td>Type a name.</td><td>Up to 64 characters.</td></tr>
+                </tbody>
+            </table>
+            <h2 id="Ports">System Requirements</h2>
+            <table>
+                <thead>
+                    <tr><th>Flow Direction</th><th>Port</th><th>Purpose</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Inbound</td><td>TCP 8443</td><td>Web interface</td></tr>
+                </tbody>
+            </table>
+            <table>
+                <thead>
+                    <tr><th>Operating System</th><th>Supported Versions</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Linux</td><td>Distro A 9 and later</td></tr>
+                </tbody>
+            </table>
+            <table>
+                <thead>
+                    <tr><th># of Hosts</th><th>CPU Cores<a href="#" class="MCTextPopup popup popupHead">1<span class="MCTextPopupBody popupBody">Physical cores.</span></a></th><th>Memory</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td rowspan="2">Up to 500</td><td>2</td><td>8 GB</td></tr>
+                    <tr><td>4</td><td>16 GB</td></tr>
+                </tbody>
+            </table>
+            <table>
+                <thead>
+                    <tr><th>Browser</th><th>Version</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Browser A</td><td>120 or later</td></tr>
+                </tbody>
+            </table>
+            <table>
+                <thead>
+                    <tr><th>Software Name</th><th>Minimum</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>libwidget</td><td>2.1</td></tr>
+                </tbody>
+            </table>
+            <table>
+                <thead>
+                    <tr><th>Item</th><th>Value</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Clock sync</td><td>Within 5 minutes</td></tr>
+                </tbody>
+            </table>
+            <h2 id="Commands">Commands</h2>
+            <table>
+                <thead>
+                    <tr><th>Operating System</th><th>Command</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>Linux</td><td>widgetctl start</td></tr>
+                </tbody>
+            </table>
+            <table>
+                <thead>
+                    <tr><th>Argument</th><th>Required</th><th>Value</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td>--key</td><td>yes</td><td>The linking key.</td></tr>
+                </tbody>
+            </table>
+            <h2>Terms</h2>
+            <table>
+                <thead>
+                    <tr><th>Acronym</th><th>Meaning</th></tr>
+                </thead>
+                <tbody>
+                    <tr><td><b>WMX</b></td><td>Widget Manager Exchange</td></tr>
+                    <tr><td>WHB</td><td></td></tr>
+                </tbody>
+            </table>
+            <p>See <a href="Install.htm#Steps">installing</a>, <a href="Install.htm">install again</a>, <a href="https://www.example.com/x">elsewhere</a>, <a href="#General">this page</a>, and <a href="https://jp.docs.tenable.com/widget/Content/Other.htm">Japanese</a>.</p>
+        </div>
+    </body>
+</html>

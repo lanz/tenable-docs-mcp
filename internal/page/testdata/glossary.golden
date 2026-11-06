@@ -1,0 +1,35 @@
+URL: https://docs.tenable.com/glossary/Content/glossary.htm
+Title: Glossary
+Description: 
+Lang: en-us
+Product:   ()
+
+=== Glossary (level 1) https://docs.tenable.com/glossary/Content/glossary.htm
+--- Glossary
+# Glossary
+
+The following glossary describes terms used in the [Widget](https://docs.tenable.com/widget/Content/Welcome.htm) guides.
+
+- **agent**: A program that reports on its host. See [agents](https://docs.tenable.com/widget/Content/Agents.htm).
+
+- **asset_tag**: A label for grouping hosts.
+
+- **baseline**: A saved state to compare against.
+
+  Widgets keep one baseline per host.
+
+=== Acronyms (level 2) https://docs.tenable.com/glossary/Content/glossary.htm#Acronyms
+--- Glossary › Acronyms
+## Acronyms
+
+| Term | Definition |
+| --- | --- |
+| WMX | Widget Manager Exchange |
+
+Table in section 1, caption "", headers ["Term" "Definition"]
+  row (group ""): ["WMX" "Widget Manager Exchange"]
+Link in section 0: https://docs.tenable.com/widget/Content/Welcome.htm "Widget"
+Link in section 0: https://docs.tenable.com/widget/Content/Agents.htm "agents"
+Term in section 0: "agent" #1001_anchor1: "A program that reports on its host. See [agents](https://docs.tenable.com/widget/Content/Agents.htm)."
+Term in section 0: "asset_tag" #1001_anchor2: "A label for grouping hosts."
+Term in section 0: "baseline" #1001_anchor3: "A saved state to compare against.\n\nWidgets keep one baseline per host."

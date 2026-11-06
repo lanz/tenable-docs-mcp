@@ -20,6 +20,7 @@ const (
 
 type tableCell struct {
 	blocks []block
+	plain  string
 	header bool
 	id     int
 }
@@ -79,7 +80,7 @@ func (r *renderer) table(n *html.Node, c ctx) []block {
 			if cs > 1 || rs > 1 {
 				complex = true
 			}
-			cell := &tableCell{blocks: r.blocks(td, ic), header: td.Data == "th", id: id}
+			cell := &tableCell{blocks: r.blocks(td, ic), plain: strings.TrimSpace(collapse(plainText(td))), header: td.Data == "th", id: id}
 			id++
 			for _, b := range cell.blocks {
 				if b.kind == kCode || b.kind == kTable {
@@ -116,6 +117,8 @@ func (r *renderer) table(n *html.Node, c ctx) []block {
 		}
 		heads++
 	}
+
+	r.tables = append(r.tables, tableData(grid, heads, cols, caption, r.lastHeading))
 
 	var out []block
 	if caption != "" {
@@ -207,6 +210,55 @@ func (r *renderer) table(n *html.Node, c ctx) []block {
 	}
 	flush()
 	return out
+}
+
+// tableData records a table's headings and rows as data.
+func tableData(grid [][]*tableCell, heads, cols int, caption string, heading int) Table {
+	tb := Table{Section: heading, Caption: caption}
+	if heads > 0 {
+		tb.Headers = make([]string, cols)
+		for col := range cols {
+			var parts []string
+			seen := map[int]bool{}
+			for _, row := range grid[:heads] {
+				if col < len(row) && row[col] != nil && !seen[row[col].id] {
+					seen[row[col].id] = true
+					if t := row[col].plain; t != "" && (len(parts) == 0 || parts[len(parts)-1] != t) {
+						parts = append(parts, t)
+					}
+				}
+			}
+			tb.Headers[col] = strings.Join(parts, " › ")
+		}
+	}
+	group := ""
+	for _, row := range grid[heads:] {
+		distinct := map[int]bool{}
+		for _, cell := range row {
+			if cell != nil {
+				distinct[cell.id] = true
+			}
+		}
+		if len(distinct) == 0 {
+			continue
+		}
+		if len(distinct) == 1 && cols > 1 && len(row) == cols && row[0] != nil {
+			group = row[0].plain // a row that spans the table is a subheading
+			continue
+		}
+		cells := make([]string, cols)
+		empty := true
+		for col, cell := range row {
+			if cell != nil {
+				cells[col] = joinBlocks(cell.blocks, true)
+				empty = empty && cells[col] == ""
+			}
+		}
+		if !empty {
+			tb.Rows = append(tb.Rows, TableRow{Group: group, Cells: cells})
+		}
+	}
+	return tb
 }
 
 func span(v string, limit int) int {

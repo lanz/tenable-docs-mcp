@@ -102,3 +102,17 @@ Headings inside drop-downs stay in their section.
 [Video: Widget tour](https://video.example/embed/abc)
 
 [Image: Deployment diagram]
+
+Table in section 4, caption "", headers ["Port" "Purpose"]
+  row (group ""): ["8443" "Web interface | API"]
+  row (group ""): ["9000" "Agent traffic.\n\nRequired for [pairing](https://docs.tenable.com/widget/Content/Install.htm#BeforeYouBegin)."]
+Table in section 5, caption "", headers ["Hosts" "CPU Cores1" "Memory"]
+  row (group "Small sites"): ["Up to 500" "2" "8 GB"]
+  row (group "Small sites"): ["Up to 500" "4" "16 GB"]
+Table in section 5, caption "", headers ["Environment" "Environment" "File"]
+  row (group ""): ["Virtual" "Hypervisor A" "`.ova`"]
+  row (group ""): ["Hardware" "Hardware" "`.iso`"]
+Link in section 0: https://docs.tenable.com/widget/Content/Roles.htm "user role"
+Link in section 0: https://docs.tenable.com/widget/Content/Requirements.htm "system requirements"
+Link in section 2: https://downloads.example/widget "Download"
+Link in section 4: https://docs.tenable.com/widget/Content/Install.htm#BeforeYouBegin "pairing"
