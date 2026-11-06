@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<!-- A made-up page with the structure of a published Flare page. All text is invented. -->
+<html xmlns:MadCap="http://www.madcapsoftware.com/Schemas/MadCap.xsd" lang="en-us" xml:lang="en-us" class="_Skins_SideNavigation">
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta charset="utf-8" />
+        <meta name="description" content="Explains how to install   Widget Manager." />
+        <meta name="guide-type" content="User Guide" />
+        <meta name="product" content="Widget Manager" />
+        <meta name="product-version" content="3.2" />
+        <title>Install Widget Manager (Widget Manager 3.2)</title>
+        <style>html { color: red; }</style>
+        <script>var shouldNotAppear = 1;</script>
+    </head>
+    <body>
+        <nav class="title-bar"><a href="../index.htm">Site menu</a></nav>
+        <div class="body-container">
+            <section class="main-section">
+                <div class="row outer-row sidenav-layout">
+                    <div class="body-container">
+                        <div role="main" id="mc-main-content">
+                            <ul data-magellan="" class="nocontent menu _Skins_SideMenu mc-component">
+                                <li class="tree-node"><a href="#Install">Install Widget Manager</a></li>
+                            </ul>
+                            <div class="tn-main-content">
+                                <h1 id="Install" data-magellan-target="Install">Install <span class="mc-variable Widget.Manager variable">Widget Manager</span></h1>
+                                <p class="Permission"><b>Required User Role:</b> Operator, Auditor, or Administrator</p>
+                                <p class="Permission"><b>Required <a href="Roles.htm" target="_blank">user role</a> when using </b><span class="mc-variable Widget.Hub variable">Widget Hub</span><b>:</b> Hub Administrator</p>
+                                <p>You can install <span class="mc-variable Widget.Manager variable">Widget Manager</span> on a host that meets the <a href="Requirements.htm" class="MCXref xref">system requirements</a>. Values like <i>PAIRING_KEY</i> and *stars* stay readable, and &lt;placeholders&gt; are escaped.</p>
+                                <p class="Note"><b>Note:</b>&#160;<span class="mc-variable Widget.Manager variable">Widget Manager</span> does not support symbolic links for <span class="Code">/opt/widget/</span>.</p>
+                                <div class="Tip">
+                                    <p><b>Tip:</b> Install during a maintenance window.</p>
+                                    <p>The installer restarts the <code>widgetd</code> service.</p>
+                                </div>
+                                <h2 id="BeforeYouBegin" data-magellan-target="BeforeYouBegin">Before you begin</h2>
+                                <p class="heading5">Before you begin:</p>
+                                <ul data-mc-conditions="WidgetConditions.3_0_and_later">
+                                    <li>
+                                        <p>Open port 8443 to the host.</p>
+                                    </li>
+                                    <li>
+                                        <p>Install the dependency:</p>
+                                        <div class="Code">
+                                            <p>dnf install -y widget-deps</p>
+                                            <p>systemctl enable widget-deps</p>
+                                        </div>
+                                    </li>
+                                </ul>
+                                <a name="Steps"></a>
+                                <h2>Install on Linux</h2>
+                                <ol>
+                                    <li value="1">
+                                        <p><a href="https://downloads.example/widget" target="_blank">Download</a> the package. Select the <img class="ReduceButtonSize" src="../Resources/Images/Icons/shared_more-vertical.svg" /> button, then <img class="ReduceButtonSize" src="../Resources/Images/Icons/x.svg" alt="Export" />.</p>
+                                    </li>
+                                    <li value="2">
+                                        <p>Run the installer for your distribution:</p>
+                                        <div class="MCDropDown MCDropDown_Closed dropDown"><span class="MCDropDownHead dropDownHead"><a href="#" class="MCDropDownHotSpot dropDownHotspot MCDropDownHotSpot_ MCHotSpotImage" aria-expanded="false"><img class="MCDropDown_Image_Icon" src="../Skins/Images/transparent.gif" alt="Closed" />Debian</a></span>
+                                            <div class="MCDropDownBody dropDownBody">
+                                                <p><tt># dpkg -i Widget-&lt;version&gt;.deb</tt></p>
+                                            </div>
+                                        </div>
+                                        <div class="codeSnippet"><a class="codeSnippetCopyButton" role="button" href="javascript:void(0);">Copy</a>
+                                            <div class="codeSnippetBody" data-mc-continue="False"><pre><code>widget-setup --key "&lt;KEY&gt;" \
+  --port 8443</code></pre>
+                                            </div>
+                                        </div>
+                                    </li>
+                                    <li value="4">
+                                        <p class="heading2" style="font-size: 1em;">Restart the service.</p>
+                                        <ul>
+                                            <li><p>On a remote host, go to https://&lt;host&gt;:8443.</p></li>
+                                            <li><p>On the local host, go to https://localhost:8443.</p></li>
+                                        </ul>
+                                    </li>
+                                </ol>
+                                <p class="heading2">Troubleshooting</p>
+                                <p><a targets="Faq" href="#" class="MCToggler MCTogglerHead MCTogglerHotSpot"><img class="MCToggler_Image_Icon" src="../Skins/Images/transparent.gif" alt="Closed" />Why does the installer pause?</a></p>
+                                <p style="display: none;" data-mc-target-name="Faq">It waits for the <MadCap:conditionalText data-mc-conditions="WidgetConditions.Hub">hub </MadCap:conditionalText>license check.</p>
+                                <div class="MCDropDown MCDropDown_Closed dropDown"><span class="MCDropDownHead dropDownHead"><a href="#" class="MCDropDownHotSpot dropDownHotspot">Advanced options</a></span>
+                                    <div class="MCDropDownBody dropDownBody">
+                                        <h3>Not a section</h3>
+                                        <p>Headings inside drop-downs stay in their section.</p>
+                                    </div>
+                                </div>
+                                <h2 id="Ports" data-magellan-target="Ports">Ports</h2>
+                                <table class="TableStyle-Tenable" cellspacing="0">
+                                    <col class="TableStyle-Tenable-Column-Column1" />
+                                    <col class="TableStyle-Tenable-Column-Column1" />
+                                    <thead>
+                                        <tr class="TableStyle-Tenable-Head-Header1">
+                                            <th>Port</th>
+                                            <th>Purpose</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>8443</td>
+                                            <td>Web interface | API</td>
+                                        </tr>
+                                        <tr>
+                                            <td>9000</td>
+                                            <td>
+                                                <p>Agent traffic.</p>
+                                                <p>Required for <a href="#BeforeYouBegin">pairing</a>.</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                <h2 id="Sizing">Sizing</h2>
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Hosts</th>
+                                            <th>CPU Cores<a href="#" class="MCTextPopup popup popupHead">1<span class="MCTextPopupBody popupBody"><span class="MCTextPopupArrow"> </span>Physical cores.</span></a></th>
+                                            <th>Memory</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td colspan="3" class="Subheading">Small sites</td>
+                                        </tr>
+                                        <tr>
+                                            <td rowspan="2">Up to 500</td>
+                                            <td>2</td>
+                                            <td>8 GB</td>
+                                        </tr>
+                                        <tr>
+                                            <td>4</td>
+                                            <td>16 GB</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                                <table>
+                                    <thead>
+                                        <tr><th colspan="2">Environment</th><th>File</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr><td>Virtual</td><td>Hypervisor A</td><td><span class="Code">.ova</span></td></tr>
+                                        <tr><td colspan="2">Hardware</td><td><span class="Code">.iso</span></td></tr>
+                                    </tbody>
+                                </table>
+                                <iframe src="https://video.example/embed/abc" title="Widget tour" width="560" height="315"></iframe>
+                                <p><a class="MCPopupThumbnailLink MCPopupThumbnailPopup" href="../Resources/Images/big.png"><img class="MCPopupThumbnail img imgThumbnail" src="../Resources/Images/big.png" /></a></p>
+                                <p><img src="../Resources/Images/diagram.png" alt="Deployment diagram" /></p>
+                                <script>/* <![CDATA[ */if (window.initPrintButton) initPrintButton();/* ]]> */</script>
+                            </div>
+                        </div>
+                        <div id="masterFooter">
+                            <p>Copyright © 2026. Footer text that is not content.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </body>
+</html>
