@@ -1,0 +1,12 @@
+[
+  {"q": "Exigences système pour Tenable OT", "expect": ["OT-security/Content/GettingStarted/SystemRequirements.htm"]},
+  {"q": "Comment générer des clés API dans OT Security ?", "expect": ["OT-security/Content/Settings/GenerateAPIKeysOT.htm"]},
+  {"q": "Installer le capteur OT", "expect": ["OT-security/Content/Installation/InstallTenableOTSensor.htm"]},
+  {"q": "Gérer les requêtes actives", "expect": ["OT-security/Content/ActiveQueries/ManageActiveQueries.htm"]},
+  {"q": "Conditions requises pour Secure Relay", "expect": ["identity-exposure/SaaS/Content/SecureRelay/secure_relay_requirements.htm", "identity-exposure/on-premises/Content/SecureRelay/secure_relay_requirements.htm"]},
+  {"q": "Installer des indicateurs d'attaque dans Identity Exposure", "expect": ["identity-exposure/SaaS/Content/Admin/IOAs/ioa-deployment/InstallIoAModule.htm", "identity-exposure/on-premises/Content/Admin/IOAs/ioa-deployment/InstallIoAModule.htm"]},
+  {"q": "Authentification SAML dans Tenable Identity Exposure", "expect": ["identity-exposure/SaaS/Content/Admin/Authentication/SAMLAuthentication.htm", "identity-exposure/on-premises/Content/Admin/Authentication/SAMLAuthentication.htm"]},
+  {"q": "Comment installer le Secure Relay ?", "expect": ["identity-exposure/SaaS/Content/Admin/SecureRelay/secure_relay_install_cli.htm", "identity-exposure/SaaS/Content/Admin/SecureRelay/secure_relay_install_nessus.htm"]},
+  {"q": "Nouveautés de Tenable Identity Exposure", "expect": ["release-notes/Content/identity-exposure/saas/2026.htm", "release-notes/Content/identity-exposure/onprem/2026.htm", "release-notes/Content/identity-exposure/saas/tenablead.htm", "release-notes/Content/identity-exposure/onprem/tenablead.htm"]},
+  {"q": "Comment installer Nessus sur Linux ?", "expect": ["nessus/Content/InstallNessusLinux.htm"]}
+]

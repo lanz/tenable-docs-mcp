@@ -26,7 +26,13 @@ type Request struct {
 	Product   string
 	GuideType string
 	Guide     string
-	Limit     int
+	// Language picks the docs' language: a site code ("jp"), a BCP 47 tag ("ja"), or a
+	// language's name. Empty means the question's own language. (Engine only.)
+	Language string
+	// Version picks a guide version ("6.3"). Empty means the version the question
+	// names, or the current one. (Engine only, apart from filtering a shard.)
+	Version string
+	Limit   int
 }
 
 // Hit is one section in the results.
@@ -46,6 +52,13 @@ type Hit struct {
 	// AlsoIn lists pages with the same title in other products or guides, which may be
 	// what the user means instead.
 	AlsoIn []Alternate
+	// Language is the site code of the hit's site.
+	Language string
+	// EnglishURL is the section on the current English page, for citing a translation or
+	// an older version; it's empty when there's no such page, or the hit is that page.
+	EnglishURL string
+	// Variants are the same page in other languages and versions. (Engine only.)
+	Variants *Variants
 }
 
 // Alternate is a same-titled page in another product or guide.
@@ -69,6 +82,15 @@ type Result struct {
 	Suggestions    []string
 	OtherProducts  []string
 	NoResultsShown string
+	// Language is the site code of the docs searched, and Requested the language asked
+	// for or detected. They differ when the translated docs had nothing and the results
+	// are in English instead.
+	Language  string
+	Requested string
+	// Version is the guide version searched, or "" for the current versions.
+	Version string
+	// Notes explain choices made along the way, such as falling back to English.
+	Notes []string
 }
 
 // Searcher searches one shard.
@@ -85,15 +107,19 @@ func New(s *index.Shard) *Searcher { return &Searcher{Shard: s} }
 
 const poolSize = 120
 
-// Search runs a search.
+// Search runs a search on this shard, reading the question in the shard's language.
+// It ignores Request.Language; use Engine to search across languages and versions.
 func (s *Searcher) Search(ctx context.Context, req Request) (*Result, error) {
+	return s.searchParsed(ctx, ParseLang(req.Query, s.Shard.Key.Site), req, req.Version)
+}
+
+func (s *Searcher) searchParsed(ctx context.Context, parsed Parsed, req Request, version string) (*Result, error) {
 	limit := req.Limit
 	if limit <= 0 {
 		limit = 10
 	}
-	parsed := Parse(req.Query)
 	res := &Result{Parsed: parsed}
-	filter := index.Filter{GuideType: req.GuideType, Guide: req.Guide}
+	filter := index.Filter{GuideType: req.GuideType, Guide: req.Guide, Version: version}
 	if req.Product != "" {
 		p, ok := ProductNamed(req.Product)
 		if !ok {
@@ -102,7 +128,7 @@ func (s *Searcher) Search(ctx context.Context, req Request) (*Result, error) {
 		filter.Product, res.Product = p, p
 	}
 	terms := parsed.Terms
-	if len(terms) == 0 && len(parsed.Phrases) == 0 {
+	if len(terms) == 0 && len(parsed.Phrases) == 0 && len(parsed.Short) == 0 {
 		// The question was only a product name, or only filler: search the product's
 		// own name.
 		for _, p := range parsed.Products {
@@ -111,12 +137,19 @@ func (s *Searcher) Search(ctx context.Context, req Request) (*Result, error) {
 			}
 		}
 	}
-	if len(terms) == 0 && len(parsed.Phrases) == 0 {
+	if len(terms) == 0 && len(parsed.Phrases) == 0 && len(parsed.Short) == 0 {
 		res.NoResultsShown = "Ask about a task, setting, or feature, such as \"configure SAML\"."
 		return res, nil
 	}
+	words := make([]word, 0, len(terms)+len(parsed.Short))
+	for _, t := range terms {
+		words = append(words, word{text: t})
+	}
+	for _, t := range parsed.Short {
+		words = append(words, word{text: t, short: true})
+	}
 
-	cands, relaxed, err := s.candidates(ctx, terms, parsed.Phrases, filter)
+	cands, relaxed, err := s.candidates(ctx, words, parsed.Phrases, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +164,7 @@ func (s *Searcher) Search(ctx context.Context, req Request) (*Result, error) {
 	if filter.Product != "" {
 		wide := filter
 		wide.Product = ""
-		if others, _, err := s.candidates(ctx, terms, parsed.Phrases, wide); err == nil {
+		if others, _, err := s.candidates(ctx, words, parsed.Phrases, wide); err == nil {
 			for _, c := range others {
 				if c.Product != "" {
 					res.OtherProducts = appendUnique(res.OtherProducts, c.Product)
@@ -146,10 +179,31 @@ func (s *Searcher) Search(ctx context.Context, req Request) (*Result, error) {
 	return res, nil
 }
 
+// word is a word of the question: a term for the full-text index, or a short word to
+// look for as text.
+type word struct {
+	text  string
+	short bool
+}
+
+// query runs a search for every one of the words and phrases.
+func (s *Searcher) query(ctx context.Context, words []word, phrases []string, f index.Filter, n int) ([]index.Candidate, error) {
+	var terms []string
+	f.Contains = slices.Clone(f.Contains)
+	for _, w := range words {
+		if w.short {
+			f.Contains = append(f.Contains, w.text)
+		} else {
+			terms = append(terms, w.text)
+		}
+	}
+	return s.Shard.Candidates(ctx, match(terms, phrases), f, n)
+}
+
 // candidates finds sections with every word; failing that, with all but one of them;
 // failing that, with any of them.
-func (s *Searcher) candidates(ctx context.Context, terms, phrases []string, f index.Filter) ([]index.Candidate, bool, error) {
-	cands, err := s.Shard.Candidates(ctx, match(terms, phrases), f, poolSize)
+func (s *Searcher) candidates(ctx context.Context, terms []word, phrases []string, f index.Filter) ([]index.Candidate, bool, error) {
+	cands, err := s.query(ctx, terms, phrases, f, poolSize)
 	if err != nil {
 		return nil, false, err
 	}
@@ -170,7 +224,7 @@ func (s *Searcher) candidates(ctx context.Context, terms, phrases []string, f in
 		}
 		for i := range terms {
 			fewer := slices.Delete(slices.Clone(terms), i, i+1)
-			cs, err := s.Shard.Candidates(ctx, match(fewer, phrases), f, poolSize/2)
+			cs, err := s.query(ctx, fewer, phrases, f, poolSize/2)
 			if err != nil {
 				return nil, false, err
 			}
@@ -187,7 +241,16 @@ func (s *Searcher) candidates(ctx context.Context, terms, phrases []string, f in
 			return cands, exact == 0, nil
 		}
 	}
-	cands, err = s.Shard.Candidates(ctx, matchAny(terms, phrases), f, poolSize)
+	var full []string
+	for _, w := range terms {
+		if !w.short {
+			full = append(full, w.text)
+		}
+	}
+	if len(full) == 0 {
+		return nil, false, nil
+	}
+	cands, err = s.Shard.Candidates(ctx, matchAny(full, phrases), f, poolSize)
 	return cands, len(cands) > 0, err
 }
 

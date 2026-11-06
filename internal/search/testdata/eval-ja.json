@@ -1,0 +1,16 @@
+[
+  {"q": "Linux に Nessus をインストールする方法", "expect": ["nessus/Content/InstallNessusLinux.htm"]},
+  {"q": "Nessus のハードウェア要件", "expect": ["nessus/Content/HardwareRequirements.htm"]},
+  {"q": "Nessus のポート要件", "expect": ["nessus/Content/PortRequirements.htm"]},
+  {"q": "プラグインをオフラインで更新する", "expect": ["nessus/Content/UpdatePluginsOffline.htm"]},
+  {"q": "Tenable.io で API キーを生成するには", "expect": ["vulnerability-management/Content/Settings/my-account/GenerateAPIKey.htm"]},
+  {"q": "エージェントグループとは", "expect": ["vulnerability-management/Content/Settings/Sensors/AgentGroups.htm", "vulnerability-management/Content/Settings/Sensors/manage-agent-groups.htm"]},
+  {"q": "資産フィルターでタグを作成する", "expect": ["vulnerability-management/Content/Settings/Tagging/CreateAnAssetTag.htm"]},
+  {"q": "Tenable Agent のリンクを解除する", "expect": ["agent/Content/UnlinkAnAgent.htm"]},
+  {"q": "Tenable Agent のシステム要件", "expect": ["agent/Content/SystemRequirements.htm"]},
+  {"q": "Web App Scanning でスキャンを作成して起動する", "expect": ["web-app-scanning/Content/WAS/Scans/CreateAndLaunchAScan.htm"]},
+  {"q": "OT Security のシステム要件", "expect": ["OT-security/Content/GettingStarted/SystemRequirements.htm"]},
+  {"q": "セキュアリレーの要件", "expect": ["identity-exposure/SaaS/Content/SecureRelay/secure_relay_requirements.htm"]},
+  {"q": "アクティブクエリを管理する", "expect": ["OT-security/Content/ActiveQueries/ManageActiveQueries.htm"]},
+  {"q": "Tenable Agent の新機能", "expect": ["release-notes/Content/agent/2026.htm", "release-notes/Content/agent/agent.htm"]}
+]

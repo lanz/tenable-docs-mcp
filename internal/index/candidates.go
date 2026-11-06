@@ -19,6 +19,10 @@ type Filter struct {
 	Guide string
 	// Version is a guide version ("10.8").
 	Version string
+	// Contains lists text a section must contain, in its title, heading, or body, ignoring
+	// case. It's for words too short for the trigram index (two-character Japanese,
+	// Chinese, and Korean words), and is slow without a full-text query beside it.
+	Contains []string
 }
 
 // Candidate is a section that matches a search, with what ranking needs to know about
@@ -46,13 +50,40 @@ type Candidate struct {
 }
 
 // Candidates returns up to limit sections matching query (an FTS5 query; see
-// MatchQuery), best first, with their pages' details.
+// MatchQuery) and the filter, best first, with their pages' details. With no query but
+// f.Contains set, it scans the sections for that text instead, ranking those with it
+// in their titles and headings first.
 func (s *Shard) Candidates(ctx context.Context, query string, f Filter, limit int) ([]Candidate, error) {
-	if strings.TrimSpace(query) == "" {
+	scan := strings.TrimSpace(query) == ""
+	if scan && len(f.Contains) == 0 {
 		return nil, nil
 	}
-	where := []string{"sections_fts MATCH ?"}
-	args := []any{weightTitle, weightHeading, weightLocation, weightBody, query}
+	var where []string
+	var args []any
+	from := `FROM sections_fts JOIN sections s ON s.id = sections_fts.rowid JOIN pages p ON p.id = s.page_id`
+	score := `bm25(sections_fts, ?, ?, ?, ?)`
+	snippet := `snippet(sections_fts, 3, '«', '»', '…', 24)`
+	var scoreArgs []any
+	if scan {
+		from = `FROM sections s JOIN pages p ON p.id = s.page_id`
+		// Each piece of text found in the title or heading counts more than one found in
+		// the body; scores are negative, like bm25's, so lower is better.
+		var parts []string
+		for _, c := range f.Contains {
+			parts = append(parts, `(CASE WHEN instr(lower(s.title || ' ' || s.heading), lower(?)) > 0 THEN 3 ELSE 1 END)`)
+			scoreArgs = append(scoreArgs, c)
+		}
+		score = "-(" + strings.Join(parts, " + ") + ")"
+		snippet = `substr(s.body, 1, 200)`
+	} else {
+		scoreArgs = []any{weightTitle, weightHeading, weightLocation, weightBody}
+		where = append(where, "sections_fts MATCH ?")
+		args = append(args, query)
+	}
+	for _, c := range f.Contains {
+		where = append(where, "instr(lower(s.title || ' ' || s.heading || ' ' || s.body), lower(?)) > 0")
+		args = append(args, c)
+	}
 	if f.Product != "" {
 		where = append(where, "p.product = ?")
 		args = append(args, f.Product)
@@ -69,18 +100,15 @@ func (s *Shard) Candidates(ctx context.Context, query string, f Filter, limit in
 		where = append(where, "p.version = ?")
 		args = append(args, f.Version)
 	}
-	args = append(args, limit)
+	args = append(append(scoreArgs, args...), limit)
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT s.id, p.id, s.url, p.url, s.title, s.heading, s.level, s.location,
-			snippet(sections_fts, 3, '«', '»', '…', 24),
-			bm25(sections_fts, ?, ?, ?, ?) AS score,
+			`+snippet+`, `+score+` AS score,
 			p.product, p.related, p.guide_type, p.guide, p.version, p.lastmod,
 			(SELECT count(*) FROM requirements r WHERE r.page_id = p.id)
-		FROM sections_fts
-		JOIN sections s ON s.id = sections_fts.rowid
-		JOIN pages p ON p.id = s.page_id
+		`+from+`
 		WHERE `+strings.Join(where, " AND ")+`
-		ORDER BY score LIMIT ?`, args...)
+		ORDER BY score, s.id LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
 	}

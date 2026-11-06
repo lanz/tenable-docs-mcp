@@ -32,6 +32,7 @@ func TestParse(t *testing.T) {
 		"lumin cyber exposure score":                {Terms: []string{"cyber", "exposure", "score"}, Products: []string{"Lumin Exposure View"}},
 	} {
 		got := Parse(q)
+		want.Lang = "en"
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("Parse(%q) =\n%+v\nwant\n%+v", q, got, want)
 		}

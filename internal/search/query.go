@@ -31,6 +31,13 @@ type Parsed struct {
 	Intent   Intent
 	// Install is set for questions about installing, which also favor requirements.
 	Install bool
+	// Lang is the site code of the language the question was read as.
+	Lang string
+	// Short lists words too short for the trigram index (two-character Japanese,
+	// Chinese, and Korean words), to look for as text instead.
+	Short []string
+	// Version is the product version the question names ("Security Center 6.3"), if any.
+	Version string
 }
 
 // Filler words dropped from English questions. Words that can matter in the docs
@@ -60,6 +67,22 @@ var (
 		`change|install|deploy|upgrade|migrate|connect|integrate|import|export|run|launch|schedule|view|assign|reset|` +
 		`generate|link|unlink|restart|start|stop|update|back ?up|restore)\b)|\bhow (do|can|to|should|would)\b|\bsteps? (to|for)\b`)
 	quoted = regexp.MustCompile(`"([^"]+)"|“([^”]+)”`)
+
+	// The same intents in the translated sites' languages. (\b doesn't work between
+	// Japanese, Chinese, or Korean characters, so those words stand alone.)
+	whatsNewIntl = regexp.MustCompile(`(?i)リリースノート|新機能|新しい機能|最新情報|変更点|发行说明|版本说明|新功能|新增功能|` +
+		`發行說明|版本說明|릴리스 정보|릴리스 노트|새로운 기능|新特性|\b(notes de version|nouveautés|quoi de neuf|` +
+		`versionshinweise|neuerungen|was ist neu|notas de la versión|novedades|qué hay de nuevo)\b`)
+	requirementsIntl = regexp.MustCompile(`(?i)要件|ポート|ハードウェア|動作環境|系统要求|端口|硬件|系統需求|系統要求|連接埠|硬體|` +
+		`요구 사항|요구사항|포트|하드웨어|\b(configuration requise|exigences|conditions requises|systemanforderungen|` +
+		`anforderungen|requisitos)\b`)
+	howToIntl = regexp.MustCompile(`(?i)方法|手順|どうやって|どのように|如何|怎么|怎麼|怎样|怎樣|步骤|步驟|방법|어떻게|` +
+		`\b(comment|wie|cómo)\b`)
+	installIntl = regexp.MustCompile(`(?i)インストール|安装|安裝|설치|\b(installer|installation|installieren|instalar|déployer)\b`)
+
+	// versionRe finds a version number such as 6.3 or 10.8.1, not part of a longer
+	// dotted number (an IP address).
+	versionRe = regexp.MustCompile(`(?i)(?:^|[^\d.])((?:version\s*|v)?(\d{1,2}\.\d{1,2}(?:\.\d{1,3})?)(?:\.x)?)(?:$|[^\d.]|\.(?:$|\s))`)
 )
 
 // compounds are words that questions split and the docs write as one.
@@ -73,9 +96,12 @@ var compounds = []struct {
 	{regexp.MustCompile(`(?i)\bwork[- ]flow(s?)\b`), "workflow$1"},
 }
 
-// Parse breaks a question down for searching.
-func Parse(question string) Parsed {
-	var p Parsed
+// Parse breaks an English question down for searching.
+func Parse(question string) Parsed { return ParseLang(question, "en") }
+
+// ParseLang breaks a question down for searching the site with the given code.
+func ParseLang(question, lang string) Parsed {
+	p := Parsed{Lang: lang}
 	rest := question
 	for _, m := range quoted.FindAllStringSubmatch(question, -1) {
 		phrase := strings.TrimSpace(m[1] + m[2])
@@ -100,21 +126,44 @@ func Parse(question string) Parsed {
 			p.Products = appendUnique(p.Products, prod)
 		}
 	}
+	// A version next to a product's name, or written as "version 6.3", selects that
+	// version.
+	versionTok := ""
+	if m := versionRe.FindStringSubmatch(rest); m != nil && (len(p.Products) > 0 || len(m[1]) > len(m[2])) {
+		p.Version, versionTok = m[2], m[2]
+	}
+	other := latinStopwords[lang]
 	for i, t := range toks {
-		if inProduct[i] || stopwords[t.low] {
+		if inProduct[i] || stopwords[t.low] || other[t.low] || t.low == versionTok ||
+			versionTok != "" && (t.low == "version" || t.low == "v"+versionTok) {
+			continue
+		}
+		if isCJK(t.low) {
+			terms, short := cjkTerms(t.low, lang)
+			for _, x := range terms {
+				p.Terms = appendUnique(p.Terms, x)
+			}
+			for _, x := range short {
+				p.Short = appendUnique(p.Short, x)
+			}
 			continue
 		}
 		p.Terms = appendUnique(p.Terms, t.low)
 	}
 	switch {
-	case whatsNewRe.MatchString(question):
+	case whatsNewRe.MatchString(question) || whatsNewIntl.MatchString(question):
 		p.Intent = WhatsNew
-	case requirementsRe.MatchString(question):
+	case requirementsRe.MatchString(question) || requirementsIntl.MatchString(question):
 		p.Intent = Requirements
-	case howToRe.MatchString(question):
+	case howToRe.MatchString(question) || howToIntl.MatchString(question):
 		p.Intent = HowTo
 	}
-	p.Install = installRe.MatchString(question)
+	p.Install = installRe.MatchString(question) || installIntl.MatchString(question)
+	if p.Intent == WhatsNew && p.Version != "" {
+		// Release notes aren't split by version: search for the version instead.
+		p.Terms = appendUnique(p.Terms, p.Version)
+		p.Version = ""
+	}
 	// Words that only state the intent don't need to be on the page.
 	if p.Intent == WhatsNew {
 		var kept []string
