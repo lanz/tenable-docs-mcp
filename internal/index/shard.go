@@ -200,9 +200,12 @@ func (s *Shard) Update(ctx context.Context, fn func(*Tx) error) error {
 	return sqlTx.Commit()
 }
 
-// Optimize merges the full-text indexes' segments and updates the query planner's
-// statistics, after a build.
+// Optimize rebuilds the vocabulary, merges the full-text indexes' segments, and updates
+// the query planner's statistics, after a build.
 func (s *Shard) Optimize(ctx context.Context) error {
+	if err := s.RebuildVocabulary(ctx); err != nil {
+		return err
+	}
 	for _, q := range []string{
 		"INSERT INTO sections_fts(sections_fts) VALUES ('optimize')",
 		"INSERT INTO settings_fts(settings_fts) VALUES ('optimize')",

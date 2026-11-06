@@ -16,7 +16,17 @@ type migration func(tx *sql.Tx, tokenizer string) error
 
 // migrations lists every schema version. Append to it; never change an entry that has
 // shipped.
-var migrations = []migration{schemaV1}
+var migrations = []migration{schemaV1, schemaV2}
+
+// schemaV2 adds the vocabulary that spelling suggestions come from: each word in the
+// sections' text, as written (not stemmed), with how often it occurs.
+func schemaV2(tx *sql.Tx, _ string) error {
+	_, err := tx.Exec(`CREATE TABLE vocabulary (
+		word TEXT PRIMARY KEY,
+		freq INTEGER NOT NULL
+	) WITHOUT ROWID`)
+	return err
+}
 
 // SchemaVersion is the schema version this build writes.
 func SchemaVersion() int { return len(migrations) }
