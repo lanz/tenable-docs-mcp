@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -119,11 +120,74 @@ func resolveTocLink(base *url.URL, link string) string {
 	return base.ResolveReference(&url.URL{Path: strings.TrimPrefix(ref.Path, "/"), RawQuery: ref.RawQuery, Fragment: ref.Fragment}).String()
 }
 
-// FetchToc gets and parses a guide's table of contents.
+// FetchToc gets and parses a guide's table of contents: FullToc.xml, or Flare's
+// JavaScript files for guides published without it.
 func FetchToc(ctx context.Context, src Source, guide Guide) ([]*TocEntry, error) {
 	resp, err := src.Fetch(ctx, Request{URL: guide.TocURL()})
+	if errors.Is(err, ErrNotFound) {
+		return FetchJSToc(ctx, src, guide)
+	}
 	if err != nil {
 		return nil, err
 	}
 	return ParseToc(bytes.NewReader(resp.Body), guide)
+}
+
+// TocTrail returns the titles leading to a page in a table of contents, from the top
+// level down to the page's own entry, ignoring any #fragment. It returns nil when the
+// page isn't listed.
+func TocTrail(toc []*TocEntry, pageURL string) []string {
+	want := withoutFragment(pageURL)
+	var walk func([]*TocEntry, []string) []string
+	walk = func(entries []*TocEntry, trail []string) []string {
+		for _, e := range entries {
+			t := append(trail[:len(trail):len(trail)], e.Title)
+			if e.URL != "" && strings.EqualFold(withoutFragment(e.URL), want) {
+				return t
+			}
+			if found := walk(e.Children, t); found != nil {
+				return found
+			}
+		}
+		return nil
+	}
+	return walk(toc, nil)
+}
+
+func withoutFragment(u string) string {
+	if i := strings.IndexByte(u, '#'); i >= 0 {
+		return u[:i]
+	}
+	return u
+}
+
+// CurrentURL returns the URL of the current version of a page from an older version's
+// guide, by dropping the version from its path (…/nessus/10_8/Content/A.htm becomes
+// …/nessus/Content/A.htm). Other URLs come back unchanged.
+func CurrentURL(pageURL string) string {
+	g, ok := GuideOf(pageURL)
+	if !ok || g.Version == "" {
+		return pageURL
+	}
+	segs := strings.Split(g.Path, "/")
+	kept := segs[:0]
+	for _, s := range segs {
+		if !versionSegment.MatchString(s) {
+			kept = append(kept, s)
+		}
+	}
+	root := strings.TrimSuffix(g.RootURL, g.Path) + strings.Join(kept, "/")
+	return root + pageURL[len(g.RootURL):]
+}
+
+// OnSite returns the URL of the same path on another documentation site. Translated
+// pages are published at the same paths as the English ones, though not every page is
+// translated.
+func OnSite(pageURL string, s Site) string {
+	u, err := url.Parse(pageURL)
+	if err != nil || !IsDocsHost(u.Host) {
+		return pageURL
+	}
+	u.Host = s.Host
+	return u.String()
 }

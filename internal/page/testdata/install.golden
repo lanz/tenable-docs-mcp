@@ -1,0 +1,104 @@
+URL: https://docs.tenable.com/widget/Content/Install.htm
+Title: Install Widget Manager
+Description: Explains how to install Widget Manager.
+Lang: en-us
+Product: Widget Manager 3.2 (User Guide)
+Requirement: "Required User Role": "Operator, Auditor, or Administrator" ["Operator" "Auditor" "Administrator"]
+Requirement: "Required user role when using Widget Hub": "Hub Administrator" ["Hub Administrator"]
+
+=== Install Widget Manager (level 1) https://docs.tenable.com/widget/Content/Install.htm#Install
+--- Install Widget Manager
+# Install Widget Manager
+
+**Required User Role:** Operator, Auditor, or Administrator
+
+**Required [user role](https://docs.tenable.com/widget/Content/Roles.htm) when using** Widget Hub**:** Hub Administrator
+
+You can install Widget Manager on a host that meets the [system requirements](https://docs.tenable.com/widget/Content/Requirements.htm). Values like *PAIRING_KEY* and \*stars\* stay readable, and \<placeholders> are escaped.
+
+> **Note:** Widget Manager does not support symbolic links for `/opt/widget/`.
+
+> **Tip:** Install during a maintenance window.
+>
+> The installer restarts the `widgetd` service.
+
+=== Before you begin (level 2) https://docs.tenable.com/widget/Content/Install.htm#BeforeYouBegin
+--- Install Widget Manager › Before you begin
+## Before you begin
+
+**Before you begin:**
+
+- Open port 8443 to the host.
+
+- Install the dependency:
+
+  ```
+  dnf install -y widget-deps
+  systemctl enable widget-deps
+  ```
+
+=== Install on Linux (level 2) https://docs.tenable.com/widget/Content/Install.htm#Steps
+--- Install Widget Manager › Install on Linux
+## Install on Linux
+
+1. [Download](https://downloads.example/widget) the package. Select the [more vertical] button, then [Export].
+
+2. Run the installer for your distribution:
+
+   **Debian**
+
+   `# dpkg -i Widget-<version>.deb`
+
+   ```
+   widget-setup --key "<KEY>" \
+     --port 8443
+   ```
+
+4. **Restart the service.**
+   - On a remote host, go to https://\<host>:8443.
+   - On the local host, go to https://localhost:8443.
+
+=== Troubleshooting (level 2) https://docs.tenable.com/widget/Content/Install.htm
+--- Install Widget Manager › Troubleshooting
+## Troubleshooting
+
+Why does the installer pause?
+
+It waits for the hub license check.
+
+**Advanced options**
+
+**Not a section**
+
+Headings inside drop-downs stay in their section.
+
+=== Ports (level 2) https://docs.tenable.com/widget/Content/Install.htm#Ports
+--- Install Widget Manager › Ports
+## Ports
+
+| Port | Purpose |
+| --- | --- |
+| 8443 | Web interface \| API |
+| 9000 | Agent traffic.<br>Required for [pairing](https://docs.tenable.com/widget/Content/Install.htm#BeforeYouBegin). |
+
+=== Sizing (level 2) https://docs.tenable.com/widget/Content/Install.htm#Sizing
+--- Install Widget Manager › Sizing
+## Sizing
+
+**Small sites**
+
+- **Hosts:** Up to 500
+  - **CPU Cores1 (Physical cores.):** 2
+  - **Memory:** 8 GB
+- **Hosts:** Up to 500
+  - **CPU Cores1 (Physical cores.):** 4
+  - **Memory:** 16 GB
+
+- **Environment:** Virtual / Hypervisor A
+  - **File:** `.ova`
+- **Environment:** Hardware
+  - **File:** `.iso`
+
+[Video: Widget tour](https://video.example/embed/abc)
+
+[Image: Deployment diagram]
