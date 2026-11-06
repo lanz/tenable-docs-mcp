@@ -35,7 +35,7 @@ type Hit struct {
 func MatchQuery(words string) string {
 	var terms []string
 	for _, w := range strings.FieldsFunc(words, func(r rune) bool {
-		return unicode.IsSpace(r) || r == '"'
+		return unicode.IsSpace(r) || unicode.IsControl(r) || r == '"' // SQLite reads a NUL as the end
 	}) {
 		terms = append(terms, `"`+w+`"`)
 	}

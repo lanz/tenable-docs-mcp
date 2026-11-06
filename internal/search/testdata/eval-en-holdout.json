@@ -1,0 +1,18 @@
+[
+  {"q": "How do I upgrade Tenable.sc?", "expect": ["security-center/Content/Upgrade.htm"]},
+  {"q": "reactivate my Nessus license", "expect": ["nessus/Content/reactivate-nessus.htm", "nessus/Content/ManageActivationCode.htm"]},
+  {"q": "configure a proxy server in Nessus", "expect": ["nessus/Content/SettingsProxyServer.htm"]},
+  {"q": "What user roles are there in Security Center?", "expect": ["security-center/Content/UserRoles.htm", "security-center/Content/manage-user-roles.htm"]},
+  {"q": "install a Nessus Agent on Windows", "expect": ["agent/Content/InstallNessusAgentWindows.htm"]},
+  {"q": "create an access group in Tenable.io", "expect": ["vulnerability-management/Content/Settings/access-groups/CreateAccessGroup.htm"]},
+  {"q": "export scan results from Nessus", "expect": ["nessus/Content/ExportAScan.htm", "nessus/Content/ScanReportFormats.htm"]},
+  {"q": "install Indicators of Attack in Tenable.ad", "expect": ["identity-exposure/SaaS/Content/Admin/IOAs/ioa-deployment/InstallIoAModule.htm", "identity-exposure/SaaS/Content/Admin/IOAs/ioa-deployment/ioa-deployment.htm"]},
+  {"q": "Web App Scanning scan templates", "expect": ["web-app-scanning/Content/WAS/Scans/ScannerTemplates.htm", "web-app-scanning/Content/WAS/Scans/UserTemplates.htm", "web-app-scanning/Content/WAS/Scans/WASScanSettings.htm"]},
+  {"q": "manage repositories in Tenable.sc", "expect": ["security-center/Content/manage-repositories.htm"]},
+  {"q": "Nessus scan and policy settings", "expect": ["nessus/Content/TemplateSettings.htm"]},
+  {"q": "Tenable Core requirements", "expect": ["tenable-core/*/Content/Requirements.htm", "tenable-core/*/Content/SystemRequirements*.htm"]},
+  {"q": "uninstall a Tenable Agent", "expect": ["agent/Content/RemoveNessusAgent.htm"]},
+  {"q": "manage active queries in OT Security", "expect": ["OT-security/Content/ActiveQueries/ManageActiveQueries.htm"]},
+  {"q": "What's new in Tenable Vulnerability Management?", "expect": ["release-notes/Content/vulnerability-management/2026.htm"]},
+  {"q": "access group rule filters", "expect": ["vulnerability-management/Content/Settings/access-groups/AccessGroupRuleFilters.htm"]}
+]
