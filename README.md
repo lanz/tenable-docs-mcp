@@ -43,6 +43,9 @@ Tenable's documentation sites. This section will list every connection it makes.
 
 ## Disclaimer
 
-This is a community project. It isn't an official Tenable product, and Tenable doesn't
-provide support for it. Tenable, Tenable One, Nessus, and other Tenable product names are
-trademarks of Tenable, Inc.
+This is an independent open source community project. It is not an official Tenable
+product and is not affiliated with, sponsored by, endorsed by, or supported by
+Tenable, Inc.
+
+Tenable, Nessus, and other Tenable product names are trademarks or registered trademarks
+of Tenable, Inc. Other names may be trademarks of their respective owners.
