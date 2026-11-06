@@ -1,0 +1,15 @@
+# Build output
+/dist/
+/tenable-docs-mcp
+/tenable-docs-mcp.exe
+*.test
+*.out
+
+# Local config and data: the index and feedback log live in the user's own folders.
+.env
+*.db
+*.db-wal
+*.db-shm
+
+# Internal names the docs tests check for; local only (repo-guard also checks commits).
+internal-patterns.txt
