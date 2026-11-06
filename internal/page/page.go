@@ -32,6 +32,49 @@ type Page struct {
 	// Requirements lists the roles and permissions the page says a task needs.
 	Requirements []Requirement
 	Sections     []Section
+	// Tables, Links, and Terms hold the page's tables, its links, and the entries of a
+	// Flare glossary, in page order, each with the section it's in.
+	Tables []Table
+	Links  []Link
+	Terms  []Term
+}
+
+// Table is a table on the page, as data.
+type Table struct {
+	// Section is the index in Sections of the section the table is in.
+	Section int
+	Caption string
+	// Headers has a label for each column, as plain text: the column's heading, with
+	// the headings above it when there are several header rows ("Group › Column").
+	// It's empty when the table has no header row.
+	Headers []string
+	Rows    []TableRow
+}
+
+// TableRow is one row of a table's body.
+type TableRow struct {
+	// Group is the subheading the row comes under: the text of the last row before it
+	// that spans the whole table.
+	Group string
+	// Cells has each column's content in Markdown. A merged cell repeats in every
+	// column and row it covers.
+	Cells []string
+}
+
+// Link is a link on the page to an http or https URL.
+type Link struct {
+	Section int
+	URL     string
+	Text    string
+}
+
+// Term is an entry in a Flare glossary.
+type Term struct {
+	Section    int
+	Term       string
+	Definition string // in Markdown
+	// Anchor is the term's anchor on the page, if it has one.
+	Anchor string
 }
 
 // Requirement is one statement of the roles or permissions a task needs, such as
@@ -123,7 +166,21 @@ func Parse(body []byte, pageURL string, opts *Options) (*Page, error) {
 	if opts != nil && opts.MaxSectionBytes > 0 {
 		limit = opts.MaxSectionBytes
 	}
-	p.Sections = sections(blocks, p.Title, p.URL, limit)
+	var at map[int]int
+	p.Sections, at = sections(blocks, p.Title, p.URL, limit)
+	in := func(heading int) int { return at[heading] }
+	for _, tb := range r.tables {
+		tb.Section = in(tb.Section)
+		p.Tables = append(p.Tables, tb)
+	}
+	for _, l := range r.links {
+		l.Section = in(l.Section)
+		p.Links = append(p.Links, l)
+	}
+	for _, term := range r.terms {
+		term.Section = in(term.Section)
+		p.Terms = append(p.Terms, term)
+	}
 	return p, nil
 }
 
@@ -200,8 +257,9 @@ func splitRoles(s string) []string {
 }
 
 // sections splits the page's blocks at its h2 headings, and splits a section larger
-// than limit again at its h3 headings.
-func sections(blocks []block, title, pageURL string, limit int) []Section {
+// than limit again at its h3 headings. It also returns the index of the section each
+// heading ended up in, by heading id (0 for content before any heading).
+func sections(blocks []block, title, pageURL string, limit int) ([]Section, map[int]int) {
 	type group struct {
 		head *block
 		body []block
@@ -246,6 +304,7 @@ func sections(blocks []block, title, pageURL string, limit int) []Section {
 	}
 
 	var out []Section
+	where := map[int]int{}
 	for gi, g := range groups {
 		size := 0
 		for _, b := range g.body {
@@ -265,7 +324,18 @@ func sections(blocks []block, title, pageURL string, limit int) []Section {
 			h2 = heading
 		}
 		if gi == 0 && len(g.body) == 0 && len(groups) > 1 {
+			where[0] = 0
+			if g.head != nil {
+				where[g.head.id] = 0
+			}
 			continue // a title with nothing under it
+		}
+		mark := func(b *block) {
+			if b != nil {
+				where[b.id] = len(out)
+			} else {
+				where[0] = len(out)
+			}
 		}
 		// Split a long section at its h3 headings.
 		var parts [][]block
@@ -285,6 +355,12 @@ func sections(blocks []block, title, pageURL string, limit int) []Section {
 			parts = append(parts, cur)
 		}
 		if len(heads) == 0 {
+			mark(g.head)
+			for i := range g.body {
+				if g.body[i].kind == kHeading {
+					mark(&g.body[i])
+				}
+			}
 			head := g.head
 			if gi == 0 && head == nil && title != "" {
 				head = &block{text: escapeText(title)}
@@ -293,16 +369,21 @@ func sections(blocks []block, title, pageURL string, limit int) []Section {
 				Trail: trail(title, h2), Markdown: render(head, level, g.body)})
 			continue
 		}
+		mark(g.head)
 		if len(parts[0]) > 0 {
 			out = append(out, Section{Heading: heading, Level: level, Anchor: anchor, URL: at(anchor),
 				Trail: trail(title, h2), Markdown: render(g.head, level, parts[0])})
 		}
 		for i, h := range heads {
+			mark(h)
 			out = append(out, Section{Heading: h.plain, Level: 3, Anchor: h.anchor, URL: at(h.anchor),
 				Trail: trail(title, h2, h.plain), Markdown: render(h, 3, parts[i+1])})
 		}
 	}
-	return out
+	for id, i := range where {
+		where[id] = min(i, max(len(out)-1, 0))
+	}
+	return out, where
 }
 
 // Products picks a page's product from the products the sitemap lists for it, in the

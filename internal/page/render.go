@@ -37,6 +37,7 @@ type block struct {
 	level  int    // headings: 1 to 3
 	anchor string // headings: the id a URL fragment can point at
 	plain  string // headings: the heading as plain text
+	id     int    // headings: numbered from 1 in page order
 }
 
 // maxDepth caps how deeply the renderer follows nested elements; anything deeper is
@@ -66,6 +67,7 @@ var skipTags = map[string]bool{
 var skipClasses = []string{
 	"nocontent", "codeSnippetCopyButton", "MCDropDown_Image_Icon", "MCToggler_Image_Icon",
 	"MCExpanding_Image_Icon", "MCTextPopupArrow",
+	"MCTextPopupBody", // read only where its popup is rendered
 }
 
 // Flare classes for notes, rendered as block quotes.
@@ -76,6 +78,22 @@ type renderer struct {
 	hasBlock map[*html.Node]bool // elements rendered as blocks: block tags and anything holding one
 	pending  string              // the name of an empty <a name> just before a heading
 	reqs     []*html.Node        // required roles and permissions, in page order
+
+	// Tables, links, and glossary terms, in page order. Until the page is split, their
+	// Section fields hold the id of the heading they follow (0 before any).
+	tables      []Table
+	links       []Link
+	terms       []Term
+	lastHeading int // the id of the last heading in the page's content
+	nextID      int
+}
+
+// headingBlock makes a heading that can start a section, and notes it as the heading
+// that what follows belongs to.
+func (r *renderer) headingBlock(level int, anchor, text, plain string) block {
+	r.nextID++
+	r.lastHeading = r.nextID
+	return block{kind: kHeading, level: level, anchor: anchor, text: text, plain: plain, id: r.nextID}
 }
 
 func newRenderer(base *url.URL, root *html.Node) *renderer {
@@ -220,7 +238,7 @@ func (r *renderer) block(n *html.Node, c ctx) []block {
 				anchor = r.pending
 			}
 			r.pending = ""
-			return []block{{kind: kHeading, level: level, anchor: anchor, text: t, plain: collapse(plainText(n))}}
+			return []block{r.headingBlock(level, anchor, t, collapse(plainText(n)))}
 		}
 		r.pending = ""
 		return []block{{kind: kPara, text: bold(t)}}
@@ -255,7 +273,7 @@ func (r *renderer) heading(n *html.Node, c ctx) []block {
 	}
 	switch {
 	case c.top && level <= 3:
-		return []block{{kind: kHeading, level: level, anchor: anchor, text: text, plain: collapse(plainText(n))}}
+		return []block{r.headingBlock(level, anchor, text, collapse(plainText(n)))}
 	case c.top:
 		return []block{{kind: kPara, text: strings.Repeat("#", level) + " " + text}}
 	}
@@ -319,6 +337,8 @@ func (r *renderer) list(n *html.Node, c ctx) []block {
 		isItem := ch.Type == html.ElementNode && ch.Data == "li"
 		var bs []block
 		switch {
+		case isItem && classes(ch)["GlossaryPageEntry"]:
+			bs = r.glossaryEntry(ch, ic)
 		case isItem:
 			if v, err := strconv.Atoi(attr(ch, "value")); err == nil && ordered {
 				num = v
@@ -359,6 +379,31 @@ func (r *renderer) list(n *html.Node, c ctx) []block {
 		sep = "\n\n"
 	}
 	return []block{{kind: kList, text: strings.Join(items, sep)}}
+}
+
+// glossaryEntry reads one entry of a Flare glossary: its term (with the anchor that
+// links to it) and its definition.
+func (r *renderer) glossaryEntry(li *html.Node, c ctx) []block {
+	termNode := find(li, hasClass("GlossaryPageTerm"))
+	defNode := find(li, hasClass("GlossaryPageDefinition"))
+	if termNode == nil || defNode == nil {
+		return r.blocks(li, c)
+	}
+	term := strings.TrimSpace(collapse(plainText(termNode)))
+	def := joinBlocks(r.blocks(defNode, c), true)
+	if term == "" {
+		return nil
+	}
+	anchor := ""
+	if a := find(termNode, func(x *html.Node) bool { return x.Data == "a" && attr(x, "name") != "" }); a != nil {
+		anchor = attr(a, "name")
+	}
+	r.terms = append(r.terms, Term{Section: r.lastHeading, Term: term, Definition: def, Anchor: anchor})
+	text := bold(escapeText(term))
+	if def != "" {
+		text += ": " + def
+	}
+	return []block{{kind: kPara, text: text}}
 }
 
 // joinBlocks joins rendered blocks. In a list item, a nested list follows the line
@@ -559,6 +604,7 @@ func (r *renderer) link(b *strings.Builder, n *html.Node, cls map[string]bool, d
 		b.WriteString(s)
 		return
 	}
+	r.links = append(r.links, Link{Section: r.lastHeading, URL: u, Text: strings.TrimSpace(collapse(plainText(n)))})
 	lead, trail := s[:len(s)-len(strings.TrimLeftFunc(s, unicode.IsSpace))], s[len(strings.TrimRightFunc(s, unicode.IsSpace)):]
 	b.WriteString(lead + "[" + text + "](" + linkTarget(u) + ")" + trail)
 }
@@ -790,7 +836,13 @@ func skip(n *html.Node) bool {
 	if skipTags[n.Data] || attr(n, "id") == "backToTop" {
 		return true
 	}
-	return hasAny(classes(n), skipClasses)
+	cls := classes(n)
+	for c := range cls {
+		if strings.HasPrefix(c, "GlossaryPageHeading") { // the letters between glossary entries
+			return true
+		}
+	}
+	return hasAny(cls, skipClasses)
 }
 
 func attr(n *html.Node, key string) string {

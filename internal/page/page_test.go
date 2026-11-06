@@ -31,6 +31,19 @@ func dump(p *Page) string {
 	for _, s := range p.Sections {
 		fmt.Fprintf(&b, "\n=== %s (level %d) %s\n--- %s\n%s\n", s.Heading, s.Level, s.URL, s.Context(), s.Markdown)
 	}
+	b.WriteString("\n")
+	for _, tb := range p.Tables {
+		fmt.Fprintf(&b, "Table in section %d, caption %q, headers %q\n", tb.Section, tb.Caption, tb.Headers)
+		for _, r := range tb.Rows {
+			fmt.Fprintf(&b, "  row (group %q): %q\n", r.Group, r.Cells)
+		}
+	}
+	for _, l := range p.Links {
+		fmt.Fprintf(&b, "Link in section %d: %s %q\n", l.Section, l.URL, l.Text)
+	}
+	for _, term := range p.Terms {
+		fmt.Fprintf(&b, "Term in section %d: %q #%s: %q\n", term.Section, term.Term, term.Anchor, term.Definition)
+	}
 	return b.String()
 }
 
@@ -67,6 +80,11 @@ func TestParseGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	golden(t, "install.golden", dump(p))
+	gp, err := Parse(readFixture(t, "glossary.htm"), "https://docs.tenable.com/glossary/Content/glossary.htm", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden(t, "glossary.golden", dump(gp))
 
 	// The same page split into smaller sections, at its h3 headings too.
 	small, err := Parse(data, fixtureURL, &Options{MaxSectionBytes: 1})
