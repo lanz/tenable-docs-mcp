@@ -1,5 +1,5 @@
 // Copyright (C) 2026 Lance Duvall
-// Project: <https://github.com/lanz/tenable-documentation-mcp>
+// Project: <https://github.com/lanz/tenable-docs-mcp>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 // Command tenable-docs-mcp is an MCP server that answers questions from Tenable's product
@@ -29,8 +29,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/lanz/tenable-documentation-mcp/internal/server"
-	"github.com/lanz/tenable-documentation-mcp/internal/version"
+	"github.com/lanz/tenable-docs-mcp/internal/server"
+	"github.com/lanz/tenable-docs-mcp/internal/version"
 )
 
 const usage = `Usage:

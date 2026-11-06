@@ -1,5 +1,5 @@
 // Copyright (C) 2026 Lance Duvall
-// Project: <https://github.com/lanz/tenable-documentation-mcp>
+// Project: <https://github.com/lanz/tenable-docs-mcp>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 package main

@@ -1,4 +1,4 @@
-module github.com/lanz/tenable-documentation-mcp
+module github.com/lanz/tenable-docs-mcp
 
 go 1.26.0
 

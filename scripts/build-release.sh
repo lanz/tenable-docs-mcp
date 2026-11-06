@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright (C) 2026 Lance Duvall
-# Project: <https://github.com/lanz/tenable-documentation-mcp>
+# Project: <https://github.com/lanz/tenable-docs-mcp>
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Builds static release archives for every supported platform into dist/, plus SHA256SUMS.
@@ -26,7 +26,7 @@ for target in "${targets[@]}"; do
   stage="dist/$name"
   mkdir -p "$stage"
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath \
-    -ldflags "-s -w -X github.com/lanz/tenable-documentation-mcp/internal/version.Version=$version" \
+    -ldflags "-s -w -X github.com/lanz/tenable-docs-mcp/internal/version.Version=$version" \
     -o "$stage/$exe" "./cmd/$cmd"
   cp LICENSE README.md "$stage/"
   if [[ "$goos" == windows ]]; then
