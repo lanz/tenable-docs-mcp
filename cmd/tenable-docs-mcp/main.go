@@ -8,8 +8,10 @@
 // Usage:
 //
 //	tenable-docs-mcp                       serve MCP over stdio (what MCP clients run)
-//	tenable-docs-mcp serve [-http ADDR]    serve over stdio, or over streamable HTTP on
-//	                                       ADDR (this machine only, e.g. 127.0.0.1:8080)
+//	tenable-docs-mcp serve [-http ADDR] [-index DIR]
+//	                                       serve over stdio, or over streamable HTTP on
+//	                                       ADDR (this machine only, e.g. 127.0.0.1:8080),
+//	                                       from the index in DIR
 //	tenable-docs-mcp version               print the version
 //
 // Over stdio, stdout carries only protocol messages; diagnostics go to stderr.
@@ -29,14 +31,19 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lanz/tenable-docs-mcp/internal/index"
 	"github.com/lanz/tenable-docs-mcp/internal/server"
 	"github.com/lanz/tenable-docs-mcp/internal/version"
 )
 
 const usage = `Usage:
   tenable-docs-mcp                       serve MCP over stdio (what MCP clients run)
-  tenable-docs-mcp serve [-http ADDR]    serve over stdio, or over streamable HTTP on ADDR
-                                         (this machine only, for example 127.0.0.1:8080)
+  tenable-docs-mcp serve [-http ADDR] [-index DIR]
+                                         serve over stdio, or over streamable HTTP on ADDR
+                                         (this machine only, for example 127.0.0.1:8080),
+                                         from the documentation index in DIR (default:
+                                         $TDM_INDEX_DIR, or tenable-docs-mcp/index in the
+                                         user's cache folder)
   tenable-docs-mcp version               print the version
   tenable-docs-mcp help                  show this help
 `
@@ -76,6 +83,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	fs := flag.NewFlagSet(server.Name+" serve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	httpAddr := fs.String("http", "", "serve streamable HTTP on this address (this machine only), instead of stdio")
+	indexDir := fs.String("index", "", "the documentation index's folder (default: $TDM_INDEX_DIR, or the user's cache folder)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -83,7 +91,11 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s serve: unexpected argument %q\n", server.Name, fs.Arg(0))
 		return 2
 	}
-	srv := server.New()
+	ix := openIndex(*indexDir, stderr)
+	if ix != nil {
+		defer ix.Close()
+	}
+	srv := server.New(ix)
 	if *httpAddr == "" {
 		if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) {
 			fmt.Fprintln(stderr, server.Name+":", err)
@@ -96,6 +108,31 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		return 2
 	}
 	return serveHTTP(ctx, server.NewHTTPServer(*httpAddr, server.HTTPHandler(srv)), stderr)
+}
+
+// openIndex opens the documentation index, or returns nil (and says why on stderr) so
+// the server can still start and report that the index isn't available.
+func openIndex(dir string, stderr io.Writer) *index.Index {
+	if dir == "" {
+		dir = os.Getenv("TDM_INDEX_DIR")
+	}
+	if dir == "" {
+		d, err := index.DefaultDir()
+		if err != nil {
+			fmt.Fprintln(stderr, server.Name+": no index folder:", err)
+			return nil
+		}
+		dir = d
+	}
+	ix, err := index.Open(dir)
+	if err != nil {
+		fmt.Fprintln(stderr, server.Name+": can't open the index:", err)
+		return nil
+	}
+	if len(ix.Keys()) == 0 {
+		fmt.Fprintf(stderr, "%s: the index in %s is empty\n", server.Name, dir)
+	}
+	return ix
 }
 
 func serveHTTP(ctx context.Context, hs *http.Server, stderr io.Writer) int {
