@@ -58,10 +58,10 @@ func TestToolAnnotations(t *testing.T) {
 	// Tools that aren't plain queries of the local index.
 	type want struct{ readOnly, openWorld bool }
 	special := map[string]want{
-		"verify_citations":   {readOnly: true, openWorld: true},   // can check the live sites
-		"report_gap":         {readOnly: false, openWorld: false}, // writes a local file
-		"refresh_index":      {readOnly: false, openWorld: true},  // fetches from the live sites
-		"open_feedback_form": {readOnly: false, openWorld: true},  // sends to Tenable
+		"verify_citations":   {readOnly: true, openWorld: true},  // can check the live sites
+		"report_gap":         {readOnly: false, openWorld: true}, // writes a local file, and can send to Tenable
+		"refresh_index":      {readOnly: false, openWorld: true}, // fetches from the live sites
+		"open_feedback_form": {readOnly: false, openWorld: true}, // sends to Tenable
 	}
 	var names []string
 	for _, tool := range res.Tools {

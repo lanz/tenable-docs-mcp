@@ -108,11 +108,11 @@ func testForm(t *testing.T, protocol string) {
 		body    string // what the fake endpoint must receive
 	}{
 		{"negative", false, &mcp.ElicitResult{Action: "accept", Content: map[string]any{"comment": " My own words. ", "email": "b@example.com"}}, "sent",
-			`{"currentUrl":"` + feedbackPage + `","helpful":"no","comment":"[Tenable Docs MCP test] My own words.","email":"b@example.com","source":"tenable-docs-mcp"}`},
+			`{"currentUrl":"` + feedbackPage + `","helpful":"no","comment":"[Tenable Docs MCP test] My own words.","email":"b@example.com","source":"tenable-docs-mcp","type":"feedback","language":"en"}`},
 		{"positive, nothing typed", true, &mcp.ElicitResult{Action: "accept"}, "sent",
-			`{"currentUrl":"` + feedbackPage + `","helpful":"yes","source":"tenable-docs-mcp"}`},
+			`{"currentUrl":"` + feedbackPage + `","helpful":"yes","source":"tenable-docs-mcp","type":"feedback","language":"en"}`},
 		{"positive, blank fields", true, &mcp.ElicitResult{Action: "accept", Content: map[string]any{"comment": "", "email": ""}}, "sent",
-			`{"currentUrl":"` + feedbackPage + `","helpful":"yes","source":"tenable-docs-mcp"}`},
+			`{"currentUrl":"` + feedbackPage + `","helpful":"yes","source":"tenable-docs-mcp","type":"feedback","language":"en"}`},
 		{"negative, blank comment", false, &mcp.ElicitResult{Action: "accept", Content: map[string]any{"comment": "   "}}, "", ""},
 		{"invalid email", true, &mcp.ElicitResult{Action: "accept", Content: map[string]any{"email": "not an email"}}, "", ""},
 		{"declined", false, &mcp.ElicitResult{Action: "decline"}, "declined", ""},
@@ -152,13 +152,17 @@ func testForm(t *testing.T, protocol string) {
 
 func TestSendFeedbackRateLimit(t *testing.T) {
 	env, got, now := feedbackEnv(t)
+	forms := 0
 	cs := connectEliciting(t, env, "", func(*mcp.ElicitRequest) *mcp.ElicitResult {
+		forms++
 		return &mcp.ElicitResult{Action: "accept", Content: map[string]any{"comment": "Clear."}}
 	})
 	args := map[string]any{"url": feedbackPage, "helpful": true}
 	call(t, cs, "open_feedback_form", args, nil)
-	if text, isErr := callRaw(t, cs, "open_feedback_form", args, nil); !isErr || !strings.Contains(text, "rate limited") || len(*got) != 1 {
-		t.Errorf("within a minute = %q", text)
+	// Within the minute, the user isn't asked to fill in a form that can't be sent.
+	var out feedbackOut
+	if text := call(t, cs, "open_feedback_form", args, &out); out.Status != "rate_limited" || !strings.Contains(text, "rate limited") || forms != 1 || len(*got) != 1 {
+		t.Errorf("within a minute = %q, %+v, %d forms", text, out, forms)
 	}
 	*now = now.Add(2 * time.Minute)
 	call(t, cs, "open_feedback_form", args, nil)
@@ -183,6 +187,23 @@ func TestFormState(t *testing.T) {
 	} {
 		if err == nil {
 			t.Errorf("%s should fail", name)
+		}
+	}
+}
+
+func TestSendFeedbackPageDetails(t *testing.T) {
+	env, got, _ := feedbackEnv(t)
+	env.Index = buildIndex(t)
+	cs := connectEliciting(t, env, "", func(*mcp.ElicitRequest) *mcp.ElicitResult {
+		return &mcp.ElicitResult{Action: "accept", Content: map[string]any{"comment": "Clear."}}
+	})
+	call(t, cs, "open_feedback_form", map[string]any{"url": feedbackPage + "#Steps", "helpful": true}, nil)
+	if len(*got) != 1 {
+		t.Fatalf("sent %v", *got)
+	}
+	for _, want := range []string{`"title":"Install Nessus on Linux"`, `"product":"Nessus"`, `"guideType":"User Guide"`, `"language":"en"`, `"type":"feedback"`} {
+		if !strings.Contains((*got)[0], want) {
+			t.Errorf("sent %s, want %s", (*got)[0], want)
 		}
 	}
 }

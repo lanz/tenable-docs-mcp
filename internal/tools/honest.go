@@ -56,13 +56,18 @@ type gapIn struct {
 	Question string `json:"question" jsonschema:"the user's question, as asked, without personal or customer details"`
 	Product  string `json:"product,omitempty"`
 	Language string `json:"language,omitempty"`
-	Note     string `json:"note,omitempty" jsonschema:"what was searched and found, such as only the 6.3 docs cover it"`
+	Note     string `json:"note,omitempty" jsonschema:"what was searched and found, such as only the 6.3 docs cover it; kept on this computer only"`
+	URL      string `json:"url,omitempty" jsonschema:"the docs page that came closest to answering, if any"`
 }
 
 type gapOut struct {
 	Recorded bool   `json:"recorded"`
 	Total    int    `json:"total" jsonschema:"how many questions are recorded"`
 	File     string `json:"file"`
+	// SentToTenable says what happened to the offer to send the gap to Tenable.
+	SentToTenable string `json:"sent_to_tenable,omitempty" jsonschema:"sent, declined, cancelled, no_form (this client can't show forms, so it wasn't offered), or rate_limited (too many sent recently, so it wasn't offered); empty when sending isn't available"`
+	Sent          string `json:"sent,omitempty" jsonschema:"exactly what was sent, as the user approved it in the form"`
+	WrittenBy     string `json:"written_by,omitempty" jsonschema:"who approved what was sent: always the user, in the form"`
 }
 
 type refreshIn struct {
@@ -205,9 +210,11 @@ func registerHonest(s *mcp.Server, env *Env) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "report_gap",
 		Description: "Record a question the docs didn't answer, in a file on this computer that only the user can " +
-			"read; nothing is sent. The user can summarize the file with `tenable-docs-mcp gaps export` and share it " +
-			"with Tenable if they choose. Leave out personal and customer details.",
-		Annotations: &mcp.ToolAnnotations{Title: "Report a gap", DestructiveHint: &notDestructive, OpenWorldHint: &closedWorld},
+			"read. Then, if the user's client can show forms, the user is offered a form to send it to Tenable's " +
+			"documentation team: the question filled in for them to edit, with optional details and email. Nothing " +
+			"is sent unless they accept. Pass url, the docs page that came closest to answering, if any. The user " +
+			"can also summarize the file with `tenable-docs-mcp gaps export`. Leave out personal and customer details.",
+		Annotations: &mcp.ToolAnnotations{Title: "Report a gap", DestructiveHint: &notDestructive, OpenWorldHint: &open},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in gapIn) (*mcp.CallToolResult, gapOut, error) {
 		if env.GapsFile == "" {
 			return nil, gapOut{}, errors.New("recording gaps isn't available in this mode")
@@ -226,12 +233,37 @@ func registerHonest(s *mcp.Server, env *Env) {
 		} else if l, ok := search.SiteFor(lang); ok {
 			lang = l
 		}
+		now := env.now()
+		if req.Params.InputResponses != nil {
+			// The user's answer to the form below; the gap was recorded on the first call.
+			return env.sendGap(ctx, req, env.gapPage(ctx, in.URL, product), in.Question, now)
+		}
 		n, err := gaps.Add(env.GapsFile, gaps.Record{Question: in.Question, Product: product, Language: lang, Note: in.Note, Version: env.Info.Version})
 		if err != nil {
 			return nil, gapOut{}, err
 		}
 		out := gapOut{Recorded: true, Total: n, File: env.GapsFile}
-		return summary("Recorded. %d questions are recorded in %s; `tenable-docs-mcp gaps export` summarizes them.", n, env.GapsFile), out, nil
+		text := fmt.Sprintf("Recorded. %d questions are recorded in %s; `tenable-docs-mcp gaps export` summarizes them.", n, env.GapsFile)
+		if env.Feedback == nil {
+			return summary("%s", text), out, nil
+		}
+		if !canElicit(req) {
+			out.SentToTenable = "no_form"
+			return summary("%s This client can't show forms, so it wasn't offered to Tenable's documentation team; "+
+				"the user can share the summary instead.", text), out, nil
+		}
+		// Don't offer a form that can't be sent now.
+		if err := env.Feedback.Check(); err != nil {
+			out.SentToTenable = "rate_limited"
+			return summary("%s It wasn't offered to Tenable's documentation team: %v. The user can report it again later, "+
+				"or share the summary.", text, err), out, nil
+		}
+		// Offer to send it; the SDK calls this tool again with the user's answer.
+		page := env.gapPage(ctx, in.URL, product)
+		return &mcp.CallToolResult{
+			InputRequests: mcp.InputRequestMap{gapFormID: gapForm(page, strings.TrimSpace(in.Question), env.Info.Version)},
+			RequestState:  gapState(page, now),
+		}, gapOut{}, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

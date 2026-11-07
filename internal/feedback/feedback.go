@@ -46,22 +46,63 @@ const Note = "Note that feedback is for documentation only and not Tenable produ
 // Source identifies feedback sent through this server, in the request's source field.
 const Source = "tenable-docs-mcp"
 
-// Feedback is what the user wants to send about a page.
+// Feedback is what the user wants to send about a page, or a question the docs didn't
+// answer (a gap).
 type Feedback struct {
 	URL     string
 	Helpful bool
 	Comment string
 	// Email is optional, for the docs team to reply.
 	Email string
+	// Gap marks a question the docs didn't answer, and Question is that question. A gap
+	// is never helpful; Comment holds any details.
+	Gap      bool
+	Question string
+	// Page describes the page, for the DF ticket.
+	Page PageDetails
 }
 
-// payload is the request body, as the widget sends it.
+// PageDetails describe a page for the DF ticket. All are optional.
+type PageDetails struct {
+	Title     string
+	Product   string
+	GuideType string
+	// Language is a language tag, such as en or ja.
+	Language string
+}
+
+// Limits the feedback service puts on the page details and the question.
+const (
+	maxTitle     = 300
+	maxProduct   = 100
+	maxGuideType = 100
+	maxLanguage  = 20
+	maxQuestion  = 1000
+)
+
+// payload is the request body: the widget's fields, plus the source, type, and page
+// details the feedback service accepts.
 type payload struct {
 	CurrentURL string `json:"currentUrl"`
 	Helpful    string `json:"helpful"`
 	Comment    string `json:"comment,omitempty"`
 	Email      string `json:"email,omitempty"`
 	Source     string `json:"source"`
+	Type       string `json:"type"`
+	Question   string `json:"question,omitempty"`
+	Title      string `json:"title,omitempty"`
+	Product    string `json:"product,omitempty"`
+	GuideType  string `json:"guideType,omitempty"`
+	Language   string `json:"language,omitempty"`
+}
+
+// clip trims s and shortens it to at most n characters.
+func clip(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if utf8.RuneCountInString(s) <= n {
+		return s
+	}
+	return strings.TrimSpace(string([]rune(s)[:n]))
 }
 
 // Prefix starts every comment, so the docs team can tell feedback sent through this
@@ -89,6 +130,22 @@ func Prepare(f Feedback, version string) (*Prepared, error) {
 		return nil, fmt.Errorf("%q isn't a page on docs.tenable.com or one of its translated sites", f.URL)
 	}
 	comment := strings.TrimSpace(f.Comment)
+	question := strings.TrimSpace(f.Question)
+	if f.Gap {
+		if question == "" {
+			return nil, errors.New("give the question the docs didn't answer")
+		}
+		if n := utf8.RuneCountInString(question); n > maxQuestion {
+			return nil, fmt.Errorf("the question is %d characters; the limit is %d", n, maxQuestion)
+		}
+		// The comment carries the question too, so the ticket shows it even where the
+		// service doesn't store the question field.
+		gap := "Docs gap: " + question
+		if comment != "" {
+			gap += "\n\n" + comment
+		}
+		comment, f.Helpful = gap, false
+	}
 	if !f.Helpful && comment == "" {
 		return nil, errors.New("say what's wrong or missing: a comment is required when the page wasn't helpful")
 	}
@@ -104,12 +161,24 @@ func Prepare(f Feedback, version string) (*Prepared, error) {
 	if n := utf8.RuneCountInString(comment); n > MaxComment {
 		return nil, fmt.Errorf("the comment is %d characters with its %d-character prefix; the limit is %d", n, utf8.RuneCountInString(Prefix(version)), MaxComment)
 	}
-	p := &Prepared{body: payload{CurrentURL: u.String(), Helpful: "no", Comment: comment, Email: email, Source: Source}}
+	p := &Prepared{body: payload{
+		CurrentURL: u.String(), Helpful: "no", Comment: comment, Email: email, Source: Source, Type: "feedback",
+		Title: clip(f.Page.Title, maxTitle), Product: clip(f.Page.Product, maxProduct),
+		GuideType: clip(f.Page.GuideType, maxGuideType), Language: clip(f.Page.Language, maxLanguage),
+	}}
 	if f.Helpful {
 		p.body.Helpful = "yes"
 	}
+	if f.Gap {
+		p.body.Type, p.body.Question = "gap", question
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Page: %s\nHelpful: %s\n", p.body.CurrentURL, p.body.Helpful)
+	fmt.Fprintf(&b, "Page: %s\n", p.body.CurrentURL)
+	if f.Gap {
+		fmt.Fprintf(&b, "Type: docs gap\nQuestion: %s\n", question)
+	} else {
+		fmt.Fprintf(&b, "Helpful: %s\n", p.body.Helpful)
+	}
 	if comment != "" {
 		fmt.Fprintf(&b, "Comment: %s\n", comment)
 	}
@@ -144,6 +213,26 @@ var mu sync.Mutex
 type sent struct {
 	Time time.Time `json:"time"`
 	payload
+}
+
+// Check reports whether sending now would pass a rate limit, so callers can say so before
+// asking the user to fill in a form. It returns an error wrapping ErrRateLimited, or nil.
+func (s *Sender) Check() error {
+	if s.LogFile == "" {
+		return errors.New("the feedback sender isn't set up")
+	}
+	now := time.Now
+	if s.Now != nil {
+		now = s.Now
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if wait, err := s.check(now().UTC()); err != nil {
+		return err
+	} else if wait != "" {
+		return fmt.Errorf("%w: %s", ErrRateLimited, wait)
+	}
+	return nil
 }
 
 // Send sends prepared feedback, and records it.

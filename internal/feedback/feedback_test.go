@@ -29,7 +29,7 @@ func TestPrepare(t *testing.T) {
 	if err := json.Unmarshal(p.Body(), &body); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]string{"currentUrl": page, "helpful": "no", "comment": "[Tenable Docs MCP 1.0.0] The port list is out of date.", "email": "a@example.com", "source": "tenable-docs-mcp"}
+	want := map[string]string{"currentUrl": page, "helpful": "no", "comment": "[Tenable Docs MCP 1.0.0] The port list is out of date.", "email": "a@example.com", "source": "tenable-docs-mcp", "type": "feedback"}
 	if len(body) != len(want) {
 		t.Errorf("body = %v", body)
 	}
@@ -45,7 +45,7 @@ func TestPrepare(t *testing.T) {
 	}
 	// Helpful, with nothing else: no comment or email in the body.
 	p, err = Prepare(Feedback{URL: "https://jp.docs.tenable.com/nessus/Content/Install.htm", Helpful: true}, "1.0.0")
-	if err != nil || string(p.Body()) != `{"currentUrl":"https://jp.docs.tenable.com/nessus/Content/Install.htm","helpful":"yes","source":"tenable-docs-mcp"}` ||
+	if err != nil || string(p.Body()) != `{"currentUrl":"https://jp.docs.tenable.com/nessus/Content/Install.htm","helpful":"yes","source":"tenable-docs-mcp","type":"feedback"}` ||
 		!strings.Contains(p.Preview, "can't reply") {
 		t.Errorf("helpful = %s, %v", p.Body(), err)
 	}
@@ -69,6 +69,57 @@ func TestPrepare(t *testing.T) {
 		}
 	}
 }
+
+func TestPrepareGap(t *testing.T) {
+	page := PageDetails{Title: "  Scan Printers  ", Product: "Nessus", GuideType: "User Guide", Language: "en"}
+	p, err := Prepare(Feedback{URL: "https://docs.tenable.com/", Gap: true, Helpful: true, Question: " How do I scan printers? ", Comment: "I need the plugin family.", Page: page}, "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(p.Body(), &body); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"currentUrl": "https://docs.tenable.com/", "helpful": "no", "source": "tenable-docs-mcp", "type": "gap",
+		"question": "How do I scan printers?", "comment": "[Tenable Docs MCP 1.0.0] Docs gap: How do I scan printers?\n\nI need the plugin family.",
+		"title": "Scan Printers", "product": "Nessus", "guideType": "User Guide", "language": "en",
+	}
+	if len(body) != len(want) {
+		t.Errorf("body = %v", body)
+	}
+	for k, v := range want {
+		if body[k] != v {
+			t.Errorf("%s = %q, want %q", k, body[k], v)
+		}
+	}
+	if !strings.Contains(p.Preview, "Type: docs gap\nQuestion: How do I scan printers?") || strings.Contains(p.Preview, "Helpful") {
+		t.Errorf("preview:\n%s", p.Preview)
+	}
+	// Without details, the comment is the question.
+	p, _ = Prepare(Feedback{URL: page0, Gap: true, Question: "Where are the logs?"}, "1.0.0")
+	if !strings.Contains(string(p.Body()), `"comment":"[Tenable Docs MCP 1.0.0] Docs gap: Where are the logs?"`) {
+		t.Errorf("body = %s", p.Body())
+	}
+	// Page details are clipped to the service's limits.
+	p, _ = Prepare(Feedback{URL: page0, Helpful: true, Page: PageDetails{Title: strings.Repeat("é", 400), Language: strings.Repeat("x", 30)}}, "1.0.0")
+	var clipped map[string]string
+	_ = json.Unmarshal(p.Body(), &clipped)
+	if len([]rune(clipped["title"])) != maxTitle || len(clipped["language"]) != maxLanguage {
+		t.Errorf("clipped = %d, %d", len([]rune(clipped["title"])), len(clipped["language"]))
+	}
+	for _, f := range []Feedback{
+		{URL: page0, Gap: true, Question: "  "},
+		{URL: page0, Gap: true, Question: strings.Repeat("x", maxQuestion+1)},
+		{URL: page0, Gap: true, Question: "Short?", Comment: strings.Repeat("x", MaxComment)},
+	} {
+		if _, err := Prepare(f, "1.0.0"); err == nil {
+			t.Errorf("%.40v should fail", f)
+		}
+	}
+}
+
+const page0 = "https://docs.tenable.com/nessus/Content/Install.htm"
 
 // fake is a stand-in for the feedback endpoint.
 type fake struct {
@@ -178,5 +229,28 @@ func TestDefaultLogFile(t *testing.T) {
 	p, err := DefaultLogFile()
 	if err == nil && filepath.Base(p) != "feedback.jsonl" {
 		t.Errorf("path = %s", p)
+	}
+}
+
+func TestCheck(t *testing.T) {
+	f := newFake(t)
+	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	s := &Sender{Endpoint: f.URL, LogFile: filepath.Join(t.TempDir(), "f.jsonl"), Now: func() time.Time { return now }}
+	if err := s.Check(); err != nil {
+		t.Fatalf("before sending = %v", err)
+	}
+	p, _ := Prepare(Feedback{URL: page, Helpful: true}, "test")
+	if err := s.Send(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Check(); !errors.Is(err, ErrRateLimited) || len(f.bodies) != 1 {
+		t.Errorf("within a minute = %v", err)
+	}
+	now = now.Add(2 * time.Minute)
+	if err := s.Check(); err != nil {
+		t.Errorf("a minute later = %v", err)
+	}
+	if err := (&Sender{}).Check(); err == nil {
+		t.Error("an unset sender should fail")
 	}
 }

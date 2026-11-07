@@ -30,7 +30,7 @@ Start with search_docs, passing the user's question in their words and language;
 before answering, and cite the url it returns. For a translation or an older version, english_url is the current
 English page. State the product and version an answer is for, and any required role the docs give. Before sending an
 answer with docs links, check them with verify_citations. When the docs don't answer a question, say so, and offer to
-record it with report_gap. When the user asks to give Tenable feedback on a page, open_feedback_form shows them the
+record it with report_gap, which also lets the user send it to Tenable if they choose. When the user asks to give Tenable feedback on a page, open_feedback_form shows them the
 docs feedback form; the feedback is theirs, and they write it. index_status shows what the documentation index holds.`
 
 // Options configure the server.
