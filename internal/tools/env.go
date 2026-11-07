@@ -25,6 +25,13 @@ type Env struct {
 	// Index is the documentation index; it may be nil, or have no shards yet.
 	Index  *index.Index
 	Engine *search.Engine
+	// Live fetches from the live docs sites, for live link checks and refresh_index;
+	// nil turns both off.
+	Live site.Source
+	// GapsFile is where report_gap records questions; empty turns it off.
+	GapsFile string
+	// AllowRefresh lets refresh_index update the index (off in hosted mode).
+	AllowRefresh bool
 }
 
 // NewEnv returns an Env for an index, which may be nil.
@@ -43,6 +50,7 @@ func Register(s *mcp.Server, env *Env) {
 	registerRead(s, env)
 	registerBrowse(s, env)
 	registerSpecific(s, env)
+	registerHonest(s, env)
 }
 
 var closedWorld = false

@@ -12,6 +12,9 @@
 //	                                       serve over stdio, or over streamable HTTP on
 //	                                       ADDR (this machine only, e.g. 127.0.0.1:8080),
 //	                                       from the index in DIR
+//	tenable-docs-mcp verify-links [-base URL] [-live] FILE...
+//	                                       check the docs links in answers or draft topics
+//	tenable-docs-mcp gaps export|clear     summarize or clear the questions report_gap recorded
 //	tenable-docs-mcp version               print the version
 //
 // Over stdio, stdout carries only protocol messages; diagnostics go to stderr.
@@ -31,8 +34,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lanz/tenable-docs-mcp/internal/gaps"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
 	"github.com/lanz/tenable-docs-mcp/internal/server"
+	"github.com/lanz/tenable-docs-mcp/internal/site"
 	"github.com/lanz/tenable-docs-mcp/internal/version"
 )
 
@@ -44,6 +49,12 @@ const usage = `Usage:
                                          from the documentation index in DIR (default:
                                          $TDM_INDEX_DIR, or tenable-docs-mcp/index in the
                                          user's cache folder)
+  tenable-docs-mcp verify-links [-base URL] [-live] [-json] FILE...
+                                         check the docs links in answers or draft topics
+                                         (- reads standard input); exits 1 if any is broken
+  tenable-docs-mcp gaps export [-since DATE] [-json]
+                                         summarize the questions the docs didn't answer
+  tenable-docs-mcp gaps clear -yes       delete the recorded questions
   tenable-docs-mcp version               print the version
   tenable-docs-mcp help                  show this help
 `
@@ -53,6 +64,9 @@ func main() {
 	defer stop()
 	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr))
 }
+
+// stdin is standard input, for verify-links -; tests replace it.
+var stdin io.Reader = os.Stdin
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	cmd, rest := "serve", args
@@ -67,6 +81,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	switch cmd {
 	case "serve":
 		return serve(ctx, rest, stderr)
+	case "verify-links":
+		return verifyLinks(ctx, rest, stdin, stdout, stderr)
+	case "gaps":
+		return gapsCmd(rest, stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, server.Name, version.Get())
 		return 0
@@ -95,7 +113,11 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	if ix != nil {
 		defer ix.Close()
 	}
-	srv := server.New(ix)
+	gapsFile, err := gaps.DefaultPath()
+	if err != nil {
+		fmt.Fprintln(stderr, server.Name+": no settings folder for recording gaps:", err)
+	}
+	srv := server.New(server.Options{Index: ix, Live: site.NewHTTP(site.HTTPConfig{UserAgent: server.UserAgent()}), GapsFile: gapsFile})
 	if *httpAddr == "" {
 		if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) {
 			fmt.Fprintln(stderr, server.Name+":", err)
