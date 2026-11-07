@@ -36,20 +36,49 @@ func TestCandidates(t *testing.T) {
 		}
 		return len(cs)
 	}
-	for f, want := range map[Filter]int{
-		{}:                                   4,
-		{Product: "Nessus"}:                  3,
-		{Product: "Security Center"}:         1,
-		{GuideType: "Reference Guide"}:       1,
-		{Guide: "nessus"}:                    2, // nessus and nessus/10_8, but not nessus_x
-		{Guide: "nessus", Version: "10.8"}:   1,
-		{Product: "Nessus", Version: "10.8"}: 1,
+	for _, c := range []struct {
+		f    Filter
+		want int
+	}{
+		{Filter{}, 4},
+		{Filter{Product: "Nessus"}, 3},
+		{Filter{Product: "Security Center"}, 1},
+		{Filter{GuideType: "Reference Guide"}, 1},
+		{Filter{Guide: "nessus"}, 2}, // nessus and nessus/10_8, but not nessus_x
+		{Filter{Guide: "nessus", Version: "10.8"}, 1},
+		{Filter{Product: "Nessus", Version: "10.8"}, 1},
+		{Filter{Contains: []string{"OLDER"}}, 1},
+		{Filter{Contains: []string{"too", "scanner"}}, 1},
 	} {
-		if got := count(f); got != want {
-			t.Errorf("%+v: %d candidates, want %d", f, got, want)
+		if got := count(c.f); got != c.want {
+			t.Errorf("%+v: %d candidates, want %d", c.f, got, c.want)
 		}
 	}
-	cs, _ := s.Candidates(ctx, MatchQuery("8834"), Filter{}, 10)
+	// Text alone, without a full-text query, scans the sections; a title match ranks first.
+	cs, err := s.Candidates(ctx, "", Filter{Contains: []string{"ports"}}, 10)
+	if err != nil || len(cs) != 4 || cs[0].Score >= 0 {
+		t.Errorf("scan = %d, %v", len(cs), err)
+	}
+	cs, _ = s.Candidates(ctx, "", Filter{Contains: []string{"elsewhere"}, Product: "Nessus"}, 10)
+	if len(cs) != 1 || cs[0].PageURL != "https://docs.tenable.com/nessus_x/Content/Ports.htm" {
+		t.Errorf("filtered scan = %+v", cs)
+	}
+
+	// Pages and their versions.
+	if r, ok, err := s.Page(ctx, "https://docs.tenable.com/nessus/10_8/Content/Ports.htm"); !ok || err != nil || r.Version != "10.8" || r.Title != "Ports" {
+		t.Errorf("page = %+v %v %v", r, ok, err)
+	}
+	if _, ok, _ := s.Page(ctx, "https://docs.tenable.com/missing.htm"); ok {
+		t.Error("a missing page was found")
+	}
+	vs, err := s.Versions(ctx, "https://docs.tenable.com/nessus/Content/Ports.htm")
+	if err != nil || len(vs) != 1 || vs[0].Version != "10.8" {
+		t.Errorf("versions = %+v, %v", vs, err)
+	}
+	if gv, err := s.GuideVersions(ctx, "nessus"); err != nil || !reflect.DeepEqual(gv, []string{"10.8"}) {
+		t.Errorf("guide versions = %q, %v", gv, err)
+	}
+	cs, _ = s.Candidates(ctx, MatchQuery("8834"), Filter{}, 10)
 	if len(cs) != 1 || cs[0].Requirements != 1 || cs[0].Product != "Nessus" || cs[0].Snippet == "" || cs[0].GuideType != "User Guide" {
 		t.Errorf("candidate = %+v", cs)
 	}
@@ -71,6 +100,22 @@ func TestCandidates(t *testing.T) {
 	vocab, err := s.Vocabulary(ctx)
 	if err != nil || vocab["scanner"] != 4 || vocab["elsewhere"] != 0 {
 		t.Errorf("vocabulary: scanner %d, elsewhere %d, %v", vocab["scanner"], vocab["elsewhere"], err)
+	}
+}
+
+func TestCompareVersions(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want int
+	}{{"10.12", "10.9", 1}, {"6.3", "6.3", 0}, {"6.3", "6.3.1", -1}, {"3.77", "3.93", -1}, {"", "1", -1}} {
+		if got := CompareVersions(c.a, c.b); got != c.want {
+			t.Errorf("CompareVersions(%q, %q) = %d", c.a, c.b, got)
+		}
+	}
+	refs := []PageRef{{Version: "10.9"}, {Version: "10.12"}, {Version: "10.10"}, {Version: "10.5"}}
+	sortVersions(refs)
+	if refs[0].Version != "10.12" || refs[3].Version != "10.5" {
+		t.Errorf("sorted = %+v", refs)
 	}
 }
 

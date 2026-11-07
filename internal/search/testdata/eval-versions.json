@@ -1,0 +1,14 @@
+[
+  {"q": "Security Center 6.5 hardware requirements", "expect": ["security-center/6_5/Content/HardwareRequirements.htm"]},
+  {"q": "upgrade Tenable.sc 6.2", "expect": ["security-center/6_2/Content/Upgrade.htm"]},
+  {"q": "install Nessus 10.5 on Linux", "expect": ["nessus/10_5/Content/InstallNessusLinux.htm"]},
+  {"q": "Nessus 10.9 port requirements", "expect": ["nessus/10_9/Content/PortRequirements.htm"]},
+  {"q": "OT Security 4.3 system requirements", "expect": ["OT-security/4_3/Content/GettingStarted/SystemRequirements.htm"]},
+  {"q": "Network Monitor 6.3 hardware requirements", "expect": ["network-monitor/6_3/Content/HardwareRequirements.htm"]},
+  {"q": "Tenable Agent 10.8 system requirements", "expect": ["agent/10_8/Content/SystemRequirements.htm"]},
+  {"q": "Identity Exposure 3.77 Secure Relay requirements", "expect": ["identity-exposure/on-premises/3_77/Content/SecureRelay/secure_relay_requirements.htm"]},
+  {"q": "back up Security Center 6.8", "expect": ["security-center/6_8/Content/Backup.htm", "security-center/6_8/Content/BackupRestore.htm"]},
+  {"q": "update plugins offline in Nessus 10.10", "expect": ["nessus/10_10/Content/UpdatePluginsOffline.htm"]},
+  {"q": "Security Center 6.6 LDAP authentication", "expect": ["security-center/6_6/Content/LDAPServers.htm", "security-center/6_6/Content/manage-ldap-servers.htm"]},
+  {"q": "Enclave Security 1.6 system requirements", "expect": ["enclave-security/1_6/Content/system-requirements.htm"]}
+]

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -20,22 +21,31 @@ import (
 	"github.com/lanz/tenable-docs-mcp/internal/site"
 )
 
-// First thresholds for the English evaluation set.
-const (
-	minRecallAt5 = 0.80
-	minMRR       = 0.60
-)
+// Thresholds for the evaluation sets: recall at 5 and mean reciprocal rank. Japanese and
+// French are set lower than English and versions: the sets are smaller, and trigram
+// search is weaker than stemmed word search.
+var thresholds = map[string][2]float64{
+	"eval-en":         {0.80, 0.60},
+	"eval-en-holdout": {0.80, 0.60},
+	"eval-versions":   {0.80, 0.60},
+	"eval-ja":         {0.70, 0.50},
+	"eval-fr":         {0.70, 0.50},
+}
 
 type evalCase struct {
 	Q string `json:"q"`
-	// Expect lists the pages that answer the question, as paths on docs.tenable.com;
-	// * matches within one path segment.
+	// Expect lists the pages that answer the question, as paths on any of the docs
+	// sites; * matches within one path segment.
 	Expect  []string `json:"expect"`
 	Product string   `json:"product,omitempty"`
 }
 
 func (c evalCase) matches(pageURL string) bool {
-	p := strings.TrimPrefix(pageURL, "https://docs.tenable.com/")
+	u, err := url.Parse(pageURL)
+	if err != nil {
+		return false
+	}
+	p := strings.TrimPrefix(u.Path, "/")
 	for _, e := range c.Expect {
 		if ok, _ := path.Match(e, p); ok {
 			return true
@@ -44,23 +54,30 @@ func (c evalCase) matches(pageURL string) bool {
 	return false
 }
 
-// TestEvalEnglish scores search on the English evaluation sets: recall at 5 (how often
-// an expected page is in the top five) and mean reciprocal rank (1 for a first-place
-// answer, ½ for second, and so on, up to tenth). eval-en.json is the set ranking was
-// tuned on; eval-en-holdout.json was written separately and not tuned on, to show
-// whether the tuning carries over. It needs an English index: either TDM_INDEX_DIR
-// holding one, or TDM_SITE_DIRS to build one from a local copy of the site (into
-// TDM_INDEX_DIR if set, so later runs reuse it).
-func TestEvalEnglish(t *testing.T) {
-	sh := evalShard(t)
-	s := New(sh)
-	for _, set := range []string{"eval-en.json", "eval-en-holdout.json"} {
-		t.Run(strings.TrimSuffix(set, ".json"), func(t *testing.T) { evalSet(t, s, set) })
+// TestEval scores search on the evaluation sets: recall at 5 (how often an expected
+// page is in the top five) and mean reciprocal rank (1 for a first-place answer, ½ for
+// second, and so on, up to tenth).
+//
+//   - eval-en: English questions ranking was tuned on.
+//   - eval-en-holdout: English questions written separately and not tuned on, to show
+//     whether the tuning carries over.
+//   - eval-ja, eval-fr: Japanese and French questions. French covers only some
+//     products, so its set includes one the English docs must answer.
+//   - eval-versions: questions about older versions of on-premises products.
+//
+// It needs an index: TDM_INDEX_DIR holding one, or TDM_SITE_DIRS to build the shards it
+// needs (English current and older versions, Japanese, and French) from local copies of
+// the sites, into TDM_INDEX_DIR if set so later runs reuse them.
+func TestEval(t *testing.T) {
+	ix := evalIndex(t)
+	e := NewEngine(ix)
+	for _, set := range []string{"eval-en", "eval-en-holdout", "eval-versions", "eval-ja", "eval-fr"} {
+		t.Run(set, func(t *testing.T) { evalSet(t, e, set) })
 	}
 }
 
-func evalSet(t *testing.T, s *Searcher, file string) {
-	data, err := os.ReadFile(filepath.Join("testdata", file))
+func evalSet(t *testing.T, e *Engine, name string) {
+	data, err := os.ReadFile(filepath.Join("testdata", name+".json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +87,7 @@ func evalSet(t *testing.T, s *Searcher, file string) {
 	}
 	hits5, rr := 0, 0.0
 	for _, c := range cases {
-		r, err := s.Search(ctx, Request{Query: c.Q, Product: c.Product, Limit: 10})
+		r, err := e.Search(ctx, Request{Query: c.Q, Product: c.Product, Limit: 10})
 		if err != nil {
 			t.Fatalf("%q: %v", c.Q, err)
 		}
@@ -93,38 +110,31 @@ func evalSet(t *testing.T, s *Searcher, file string) {
 		}
 		var top []string
 		for _, h := range r.Hits[:min(3, len(r.Hits))] {
-			top = append(top, strings.TrimPrefix(h.URL, "https://docs.tenable.com/"))
+			u, _ := url.Parse(h.URL)
+			top = append(top, strings.TrimPrefix(u.Path, "/"))
 		}
-		t.Logf("%srank %2d  %-62q intent %-12s products %v; top: %s", mark, rank, c.Q, r.Parsed.Intent, r.Parsed.Products, strings.Join(top, " | "))
+		lang := r.Language
+		if r.Version != "" {
+			lang += " " + r.Version
+		}
+		t.Logf("%srank %2d  %-56q [%s] intent %-12s products %v; top: %s", mark, rank, c.Q, lang, r.Parsed.Intent, r.Parsed.Products, strings.Join(top, " | "))
 	}
+	th := thresholds[name]
 	recall, mrr := float64(hits5)/float64(len(cases)), rr/float64(len(cases))
-	t.Logf("%d questions: recall at 5 %.2f (threshold %.2f), MRR %.2f (threshold %.2f)", len(cases), recall, minRecallAt5, mrr, minMRR)
-	if recall < minRecallAt5 || mrr < minMRR {
+	t.Logf("%d questions: recall at 5 %.2f (threshold %.2f), MRR %.2f (threshold %.2f)", len(cases), recall, th[0], mrr, th[1])
+	if recall < th[0] || mrr < th[1] {
 		t.Errorf("below the thresholds")
 	}
 }
 
-func evalShard(t *testing.T) *index.Shard {
+// evalIndex opens or builds the index the evaluation sets need.
+func evalIndex(t *testing.T) *index.Index {
 	t.Helper()
-	k := index.Key{Site: "en"}
+	need := []index.Key{{Site: "en"}, {Site: "en", Older: true}, {Site: "jp"}, {Site: "fr"}}
 	dir := os.Getenv("TDM_INDEX_DIR")
-	if dir != "" {
-		if _, err := os.Stat(filepath.Join(dir, k.FileName())); err == nil {
-			ix, err := index.Open(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { ix.Close() })
-			return ix.Shard(k)
-		}
-	}
 	v := os.Getenv("TDM_SITE_DIRS")
-	if v == "" {
+	if dir == "" && v == "" {
 		t.Skip("set TDM_INDEX_DIR to an index, or TDM_SITE_DIRS to build one")
-	}
-	dirs, err := site.ParseSiteDirs(v)
-	if err != nil || dirs["en"] == "" {
-		t.Skipf("TDM_SITE_DIRS has no folder for en (%v)", err)
 	}
 	if dir == "" {
 		dir = filepath.Join(t.TempDir(), "index")
@@ -134,26 +144,40 @@ func evalShard(t *testing.T) *index.Shard {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ix.Close() })
-	start := time.Now()
-	if err := buildCurrent(ix, dirs["en"]); err != nil {
-		t.Fatal(err)
+	var dirs map[string]string
+	if v != "" {
+		if dirs, err = site.ParseSiteDirs(v); err != nil {
+			t.Fatal(err)
+		}
 	}
-	t.Logf("built the English index in %v", time.Since(start).Round(time.Second))
-	return ix.Shard(k)
+	for _, k := range need {
+		if ix.Shard(k) != nil {
+			continue
+		}
+		if dirs[k.Site] == "" {
+			t.Skipf("the index has no %s shard, and TDM_SITE_DIRS has no folder to build it from", k)
+		}
+		start := time.Now()
+		if err := buildShard(ix, k, dirs[k.Site]); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("built %s in %v", k, time.Since(start).Round(time.Second))
+	}
+	return ix
 }
 
-// buildCurrent builds the English shard of current guide versions from a local copy.
-func buildCurrent(ix *index.Index, dir string) error {
-	src, err := site.NewLocal(map[string]string{"en": dir})
+// buildShard builds a shard from a local copy of its site.
+func buildShard(ix *index.Index, k index.Key, dir string) error {
+	src, err := site.NewLocal(map[string]string{k.Site: dir})
 	if err != nil {
 		return err
 	}
-	en := site.Sites[0]
-	entries, err := site.FetchSitemap(ctx, src, en)
+	s, _ := site.ByCode(k.Site)
+	entries, err := site.FetchSitemap(ctx, src, s)
 	if err != nil {
 		return err
 	}
-	b, err := ix.Build(index.Key{Site: "en"})
+	b, err := ix.Build(k)
 	if err != nil {
 		return err
 	}
@@ -173,7 +197,7 @@ func buildCurrent(ix *index.Index, dir string) error {
 	}
 	for _, e := range entries {
 		g, ok := site.GuideOf(e.URL)
-		if ok && g.Version != "" {
+		if (ok && g.Version != "") != k.Older {
 			continue
 		}
 		resp, err := src.Fetch(ctx, site.Request{URL: e.URL})
@@ -191,7 +215,7 @@ func buildCurrent(ix *index.Index, dir string) error {
 			toc, _ = site.FetchToc(ctx, src, g)
 			tocs[g.RootURL] = toc
 		}
-		batch = append(batch, index.NewDoc(p, en, e, site.TocTrail(toc, e.URL)))
+		batch = append(batch, index.NewDoc(p, s, e, site.TocTrail(toc, e.URL)))
 		if len(batch) >= 500 {
 			if err := flush(); err != nil {
 				return err
