@@ -18,7 +18,7 @@ func connect(t *testing.T) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 	serverT, clientT := mcp.NewInMemoryTransports()
-	ss, err := New(nil).Connect(ctx, serverT, nil)
+	ss, err := New(Options{}).Connect(ctx, serverT, nil)
 	if err != nil {
 		t.Fatalf("server connect: %v", err)
 	}
@@ -47,23 +47,37 @@ func TestInitialize(t *testing.T) {
 	}
 }
 
-func TestToolsAreReadOnlyAndClosedWorld(t *testing.T) {
+func TestToolAnnotations(t *testing.T) {
 	res, err := connect(t).ListTools(context.Background(), &mcp.ListToolsParams{})
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
+	// Tools that aren't plain queries of the local index.
+	type want struct{ readOnly, openWorld bool }
+	special := map[string]want{
+		"verify_citations": {readOnly: true, openWorld: true},   // can check the live sites
+		"report_gap":       {readOnly: false, openWorld: false}, // writes a local file
+		"refresh_index":    {readOnly: false, openWorld: true},  // fetches from the live sites
+	}
 	var names []string
 	for _, tool := range res.Tools {
 		names = append(names, tool.Name)
+		w, ok := special[tool.Name]
+		if !ok {
+			w = want{readOnly: true}
+		}
 		a := tool.Annotations
-		if a == nil || !a.ReadOnlyHint || a.OpenWorldHint == nil || *a.OpenWorldHint {
-			t.Errorf("%s: query tools must be marked read-only and closed-world", tool.Name)
+		if a == nil || a.ReadOnlyHint != w.readOnly || a.OpenWorldHint == nil || *a.OpenWorldHint != w.openWorld {
+			t.Errorf("%s: annotations %+v, want read-only %v and open-world %v", tool.Name, a, w.readOnly, w.openWorld)
+		}
+		if !a.ReadOnlyHint && (a.DestructiveHint == nil || *a.DestructiveHint) {
+			t.Errorf("%s: tools that write must be marked not destructive", tool.Name)
 		}
 		if tool.OutputSchema == nil {
 			t.Errorf("%s: every tool needs an output schema", tool.Name)
 		}
 	}
-	if got, want := strings.Join(names, " "), "browse_guide define_term find_setting index_status list_products outline read_doc related_pages release_notes required_role requirements search_docs"; got != want {
+	if got, want := strings.Join(names, " "), "browse_guide define_term find_setting index_status list_products outline read_doc refresh_index related_pages release_notes report_gap required_role requirements search_docs verify_citations"; got != want {
 		t.Errorf("tools = %s, want %s", got, want)
 	}
 }

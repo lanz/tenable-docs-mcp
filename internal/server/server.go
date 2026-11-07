@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lanz/tenable-docs-mcp/internal/index"
+	"github.com/lanz/tenable-docs-mcp/internal/site"
 	"github.com/lanz/tenable-docs-mcp/internal/tools"
 	"github.com/lanz/tenable-docs-mcp/internal/version"
 )
@@ -26,16 +27,37 @@ Portal MCP (https://developer.tenable.com/mcp).
 
 Start with search_docs, passing the user's question in their words and language; read the best result with read_doc
 before answering, and cite the url it returns. For a translation or an older version, english_url is the current
-English page. State the product and version an answer is for, and any required role the docs give. index_status shows
-what the documentation index holds.`
+English page. State the product and version an answer is for, and any required role the docs give. Before sending an
+answer with docs links, check them with verify_citations. When the docs don't answer a question, say so, and offer to
+record it with report_gap. index_status shows what the documentation index holds.`
 
-// New returns the MCP server with every tool registered, answering from an index, which
-// may be nil (the tools then say the index isn't built).
-func New(ix *index.Index) *mcp.Server {
+// Options configure the server.
+type Options struct {
+	// Index is the documentation index; nil means it isn't built (the tools say so).
+	Index *index.Index
+	// Live fetches from the live docs sites; nil turns off live link checks and
+	// refresh_index.
+	Live site.Source
+	// GapsFile is where report_gap records questions; empty turns it off.
+	GapsFile string
+	// Hosted turns off what a shared server mustn't do: refresh_index and report_gap.
+	Hosted bool
+}
+
+// New returns the MCP server with every tool registered.
+func New(opts Options) *mcp.Server {
 	s := mcp.NewServer(
 		&mcp.Implementation{Name: Name, Title: "Tenable Docs MCP", Version: version.Get(), WebsiteURL: ProjectURL},
 		&mcp.ServerOptions{Instructions: instructions},
 	)
-	tools.Register(s, tools.NewEnv(tools.Info{Name: Name, Version: version.Get()}, ix))
+	env := tools.NewEnv(tools.Info{Name: Name, Version: version.Get()}, opts.Index)
+	env.Live = opts.Live
+	if !opts.Hosted {
+		env.GapsFile, env.AllowRefresh = opts.GapsFile, true
+	}
+	tools.Register(s, env)
 	return s
 }
+
+// UserAgent identifies the server to the docs sites.
+func UserAgent() string { return Name + "/" + version.Get() + " (+" + ProjectURL + ")" }

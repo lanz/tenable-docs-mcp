@@ -1,0 +1,256 @@
+// Copyright (C) 2026 Lance Duvall
+// Project: <https://github.com/lanz/tenable-docs-mcp>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// Package gaps records the questions the documentation didn't answer, in a file only
+// the user can read, and summarizes them for the user to share with Tenable if they
+// choose. Nothing is sent anywhere.
+package gaps
+
+import (
+	"bufio"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Record is one unanswered question.
+type Record struct {
+	Time     time.Time `json:"time"`
+	Question string    `json:"question"`
+	Product  string    `json:"product,omitempty"`
+	Language string    `json:"language,omitempty"`
+	// Note is what the assistant tried or found, such as "only covers version 6.3".
+	Note string `json:"note,omitempty"`
+	// Version is the server's version.
+	Version string `json:"version,omitempty"`
+}
+
+// Limits on what's recorded.
+const (
+	MaxQuestion = 2000
+	MaxNote     = 1000
+)
+
+// DefaultPath returns where gaps are recorded: tenable-docs-mcp/gaps.jsonl in the user's
+// settings folder.
+func DefaultPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "tenable-docs-mcp", "gaps.jsonl"), nil
+}
+
+var mu sync.Mutex // serializes writes from this process
+
+// Add appends a record, creating the file (readable only by its owner) if needed. It
+// returns how many records the file now holds.
+func Add(path string, r Record) (int, error) {
+	r.Question = clip(strings.TrimSpace(r.Question), MaxQuestion)
+	r.Note = clip(strings.TrimSpace(r.Note), MaxNote)
+	if r.Question == "" {
+		return 0, errors.New("the question is empty")
+	}
+	if r.Time.IsZero() {
+		r.Time = time.Now().UTC()
+	}
+	line, err := json.Marshal(r)
+	if err != nil {
+		return 0, err
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return 0, err
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := f.Write(append(line, '\n')); err != nil {
+		f.Close()
+		return 0, err
+	}
+	if err := f.Close(); err != nil {
+		return 0, err
+	}
+	recs, err := Read(path)
+	return len(recs), err
+}
+
+func clip(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}
+
+// Read returns every record, oldest first. A missing file has none; lines that don't
+// parse are skipped.
+func Read(path string) ([]Record, error) {
+	f, err := os.Open(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	var out []Record
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 64<<10), 1<<20)
+	for sc.Scan() {
+		var r Record
+		if json.Unmarshal(sc.Bytes(), &r) == nil && r.Question != "" {
+			out = append(out, r)
+		}
+	}
+	return out, sc.Err()
+}
+
+// Clear deletes the file of records.
+func Clear(path string) error {
+	mu.Lock()
+	defer mu.Unlock()
+	err := os.Remove(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+// Summary groups records for sharing.
+type Summary struct {
+	Total    int            `json:"total"`
+	First    time.Time      `json:"first"`
+	Last     time.Time      `json:"last"`
+	Products []ProductGaps  `json:"products"`
+	Language map[string]int `json:"languages"`
+}
+
+// ProductGaps lists the questions for one product ("" for questions without one).
+type ProductGaps struct {
+	Product   string     `json:"product"`
+	Count     int        `json:"count"`
+	Questions []Question `json:"questions"`
+}
+
+// Question is a question and how many times it was recorded.
+type Question struct {
+	Text  string   `json:"text"`
+	Count int      `json:"count"`
+	Notes []string `json:"notes,omitempty"`
+}
+
+// Summarize groups records since a time (zero for all) by product, and the same
+// question (ignoring case) within a product, most asked first.
+func Summarize(recs []Record, since time.Time) Summary {
+	s := Summary{Language: map[string]int{}}
+	byProduct := map[string]*ProductGaps{}
+	byQuestion := map[string]*Question{}
+	for _, r := range recs {
+		if r.Time.Before(since) {
+			continue
+		}
+		s.Total++
+		if s.First.IsZero() || r.Time.Before(s.First) {
+			s.First = r.Time
+		}
+		if r.Time.After(s.Last) {
+			s.Last = r.Time
+		}
+		lang := r.Language
+		if lang == "" {
+			lang = "en"
+		}
+		s.Language[lang]++
+		pg := byProduct[r.Product]
+		if pg == nil {
+			pg = &ProductGaps{Product: r.Product}
+			byProduct[r.Product] = pg
+		}
+		pg.Count++
+		key := r.Product + "\x00" + strings.ToLower(strings.Join(strings.Fields(r.Question), " "))
+		q := byQuestion[key]
+		if q == nil {
+			q = &Question{Text: r.Question}
+			byQuestion[key] = q
+		}
+		q.Count++
+		if r.Note != "" && len(q.Notes) < 5 && !contains(q.Notes, r.Note) {
+			q.Notes = append(q.Notes, r.Note)
+		}
+	}
+	for key, q := range byQuestion {
+		product, _, _ := strings.Cut(key, "\x00")
+		byProduct[product].Questions = append(byProduct[product].Questions, *q)
+	}
+	for _, pg := range byProduct {
+		sort.Slice(pg.Questions, func(i, j int) bool {
+			if pg.Questions[i].Count != pg.Questions[j].Count {
+				return pg.Questions[i].Count > pg.Questions[j].Count
+			}
+			return pg.Questions[i].Text < pg.Questions[j].Text
+		})
+		s.Products = append(s.Products, *pg)
+	}
+	sort.Slice(s.Products, func(i, j int) bool {
+		if s.Products[i].Count != s.Products[j].Count {
+			return s.Products[i].Count > s.Products[j].Count
+		}
+		return s.Products[i].Product < s.Products[j].Product
+	})
+	return s
+}
+
+func contains(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// Markdown writes a summary for sharing.
+func (s Summary) Markdown() string {
+	var b strings.Builder
+	b.WriteString("# Questions the Tenable documentation didn't answer\n\n")
+	if s.Total == 0 {
+		b.WriteString("None recorded.\n")
+		return b.String()
+	}
+	fmt.Fprintf(&b, "%d questions recorded by Tenable Docs MCP between %s and %s.\n",
+		s.Total, s.First.Format("2006-01-02"), s.Last.Format("2006-01-02"))
+	var langs []string
+	for l, n := range s.Language {
+		langs = append(langs, fmt.Sprintf("%s %d", l, n))
+	}
+	sort.Strings(langs)
+	fmt.Fprintf(&b, "Languages: %s.\n", strings.Join(langs, ", "))
+	for _, pg := range s.Products {
+		name := pg.Product
+		if name == "" {
+			name = "No product named"
+		}
+		fmt.Fprintf(&b, "\n## %s (%d)\n\n", name, pg.Count)
+		for _, q := range pg.Questions {
+			line := "- " + strings.ReplaceAll(q.Text, "\n", " ")
+			if q.Count > 1 {
+				line += fmt.Sprintf(" (asked %d times)", q.Count)
+			}
+			b.WriteString(line + "\n")
+			for _, n := range q.Notes {
+				fmt.Fprintf(&b, "  - Note: %s\n", strings.ReplaceAll(n, "\n", " "))
+			}
+		}
+	}
+	return b.String()
+}

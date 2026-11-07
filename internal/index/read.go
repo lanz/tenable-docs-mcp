@@ -46,6 +46,10 @@ type PageInfo struct {
 	Roles          []page.Requirement
 	LastMod        string
 	IndexedAt      string
+	// ETag and LastModified are the validators from the last fetch, for conditional
+	// requests.
+	ETag         string
+	LastModified string
 }
 
 // Section is one stored section of a page.
@@ -64,9 +68,10 @@ func (s *Shard) PageInfo(ctx context.Context, pageURL string) (*PageInfo, bool, 
 	p := &PageInfo{}
 	var related, trail, roles string
 	err := s.db.QueryRowContext(ctx, `SELECT url, site, lang, title, description, product, related, guide, guide_type,
-		version, product_version, current_url, toc_trail, roles, lastmod, indexed_at FROM pages WHERE url = ?`, pageURL).
+		version, product_version, current_url, toc_trail, roles, lastmod, indexed_at, etag, last_modified
+		FROM pages WHERE url = ?`, pageURL).
 		Scan(&p.URL, &p.Site, &p.Lang, &p.Title, &p.Description, &p.Product, &related, &p.Guide, &p.GuideType,
-			&p.Version, &p.ProductVersion, &p.CurrentURL, &trail, &roles, &p.LastMod, &p.IndexedAt)
+			&p.Version, &p.ProductVersion, &p.CurrentURL, &trail, &roles, &p.LastMod, &p.IndexedAt, &p.ETag, &p.LastModified)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, false, nil
 	} else if err != nil {
@@ -169,6 +174,11 @@ func (s *Shard) Guides(ctx context.Context) ([]GuideInfo, error) {
 		out = append(out, g)
 	}
 	return out, rows.Err()
+}
+
+// GuidePages returns the URLs of a guide's pages, in order.
+func (s *Shard) GuidePages(ctx context.Context, guidePath string) ([]string, error) {
+	return s.strings(ctx, `SELECT url FROM pages WHERE guide = ? ORDER BY url`, guidePath)
 }
 
 // LastIndexed returns when the shard's most recently indexed page was indexed.
