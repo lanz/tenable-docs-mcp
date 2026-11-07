@@ -84,10 +84,12 @@ func registerFeedback(s *mcp.Server, env *Env) {
 		Name: "send_feedback",
 		Description: "Open a form in which the user writes feedback about a docs page for Tenable's documentation " +
 			"team, like the feedback form on each docs page. Use it when the user wants to give feedback on a " +
-			"page. Choose the page and whether it was helpful from what the user said; the user writes the " +
-			"comment, and their email if they want a reply, in the form. You can't write feedback for them. " +
-			"Feedback is for the documentation, not for Tenable products. If the user's client can't show " +
-			"forms, nothing is sent; give them the page's link to use its own feedback form.",
+			"page. Choose the page and whether it was helpful from what the user said. The tool takes only those " +
+			"two arguments, by design: the user writes the comment, and their email if they want a reply, in " +
+			"the form, and you can't write feedback for them. If you noticed problems on the page, tell the user " +
+			"before opening the form, so they can use them in their own words. Feedback is for the documentation, " +
+			"not for Tenable products. If the user's client can't show forms, nothing is sent; give them the " +
+			"page's link to use its own feedback form.",
 		Annotations: &mcp.ToolAnnotations{Title: "Send docs feedback", DestructiveHint: &notDestructive, OpenWorldHint: &open},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in feedbackIn) (*mcp.CallToolResult, feedbackOut, error) {
 		if env.Feedback == nil {
@@ -182,7 +184,8 @@ func (e *Env) sendForm(ctx context.Context, req *mcp.CallToolRequest, in feedbac
 		return nil, feedbackOut{}, err
 	}
 	out.Status, out.Sent = "sent", p.Preview
-	return summary("Sent the user's feedback to Tenable's documentation team:\n\n%s", strings.TrimSpace(p.Preview)), out, nil
+	return summary("Sent to Tenable's documentation team. The user wrote the comment and email in the form, and "+
+		"this server added only the version prefix:\n\n%s", strings.TrimSpace(p.Preview)), out, nil
 }
 
 // canElicit reports whether the client can show the user a form.
