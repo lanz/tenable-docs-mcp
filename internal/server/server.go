@@ -30,8 +30,8 @@ Start with search_docs, passing the user's question in their words and language;
 before answering, and cite the url it returns. For a translation or an older version, english_url is the current
 English page. State the product and version an answer is for, and any required role the docs give. Before sending an
 answer with docs links, check them with verify_citations. When the docs don't answer a question, say so, and offer to
-record it with report_gap. When the user wants to give Tenable feedback on a page, send_feedback opens a form in
-which they write it; don't write feedback for them. index_status shows what the documentation index holds.`
+record it with report_gap. When the user asks to give Tenable feedback on a page, open_feedback_form shows them the
+docs feedback form; the feedback is theirs, and they write it. index_status shows what the documentation index holds.`
 
 // Options configure the server.
 type Options struct {
@@ -42,10 +42,10 @@ type Options struct {
 	Live site.Source
 	// GapsFile is where report_gap records questions; empty turns it off.
 	GapsFile string
-	// Feedback sends send_feedback's feedback; nil turns it off.
+	// Feedback sends open_feedback_form's feedback; nil turns it off.
 	Feedback *feedback.Sender
 	// Hosted turns off what a shared server mustn't do: refresh_index, report_gap, and
-	// send_feedback.
+	// open_feedback_form.
 	Hosted bool
 }
 

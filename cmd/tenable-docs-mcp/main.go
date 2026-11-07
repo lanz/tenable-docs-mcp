@@ -120,7 +120,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	}
 	var sender *feedback.Sender
 	if logFile, err := feedback.DefaultLogFile(); err != nil {
-		fmt.Fprintln(stderr, server.Name+": no settings folder for the feedback log, so send_feedback is off:", err)
+		fmt.Fprintln(stderr, server.Name+": no settings folder for the feedback log, so open_feedback_form is off:", err)
 	} else {
 		sender = &feedback.Sender{Endpoint: feedback.Endpoint, UserAgent: server.UserAgent(), LogFile: logFile}
 	}

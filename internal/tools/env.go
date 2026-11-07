@@ -34,7 +34,7 @@ type Env struct {
 	GapsFile string
 	// AllowRefresh lets refresh_index update the index (off in hosted mode).
 	AllowRefresh bool
-	// Feedback sends send_feedback's feedback; nil turns it off (as in hosted mode).
+	// Feedback sends open_feedback_form's feedback; nil turns it off (as in hosted mode).
 	Feedback *feedback.Sender
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time

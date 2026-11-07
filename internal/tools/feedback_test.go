@@ -64,7 +64,7 @@ func TestSendFeedbackWithoutForms(t *testing.T) {
 	env, got, _ := feedbackEnv(t)
 	cs := connectEnv(t, env)
 	var out feedbackOut
-	text := call(t, cs, "send_feedback", map[string]any{"url": "docs.tenable.com/nessus/Content/Install.htm", "helpful": false}, &out)
+	text := call(t, cs, "open_feedback_form", map[string]any{"url": "docs.tenable.com/nessus/Content/Install.htm", "helpful": false}, &out)
 	if out.Status != "no_form" || out.Page != feedbackPage || len(*got) != 0 || !strings.Contains(text, "Nothing was sent") || !strings.Contains(text, feedbackPage) {
 		t.Errorf("out = %+v\n%s", out, text)
 	}
@@ -74,7 +74,7 @@ func TestSendFeedbackWithoutForms(t *testing.T) {
 		{"url": feedbackPage, "helpful": true, "email": "a@example.com"},
 		{"url": "https://example.com/x", "helpful": true},
 	} {
-		if text, isErr := callRaw(t, cs, "send_feedback", a, nil); !isErr {
+		if text, isErr := callRaw(t, cs, "open_feedback_form", a, nil); !isErr {
 			t.Errorf("%v should fail: %s", a, text)
 		}
 	}
@@ -82,7 +82,7 @@ func TestSendFeedbackWithoutForms(t *testing.T) {
 		t.Errorf("sent %v", *got)
 	}
 	// Off without a sender (hosted mode).
-	if text, isErr := callRaw(t, connect(t, nil), "send_feedback", map[string]any{"url": feedbackPage, "helpful": true}, nil); !isErr || !strings.Contains(text, "isn't available") {
+	if text, isErr := callRaw(t, connect(t, nil), "open_feedback_form", map[string]any{"url": feedbackPage, "helpful": true}, nil); !isErr || !strings.Contains(text, "isn't available") {
 		t.Errorf("off = %q", text)
 	}
 }
@@ -126,7 +126,7 @@ func testForm(t *testing.T, protocol string) {
 			return tc.answer
 		})
 		var out feedbackOut
-		text, isErr := callRaw(t, cs, "send_feedback", map[string]any{"url": feedbackPage, "helpful": tc.helpful}, &out)
+		text, isErr := callRaw(t, cs, "open_feedback_form", map[string]any{"url": feedbackPage, "helpful": tc.helpful}, &out)
 		switch {
 		case tc.status == "" && !isErr:
 			t.Errorf("%s: should fail: %+v", tc.name, out)
@@ -136,7 +136,7 @@ func testForm(t *testing.T, protocol string) {
 		if tc.body == "" && len(*got) != 0 || tc.body != "" && (len(*got) != 1 || (*got)[0] != tc.body) {
 			t.Errorf("%s: sent %v", tc.name, *got)
 		}
-		if tc.status == "sent" && !strings.Contains(out.Sent, "Page: "+feedbackPage) {
+		if tc.status == "sent" && (!strings.Contains(out.Sent, "Page: "+feedbackPage) || out.WrittenBy == "" || !strings.Contains(text, "wrote the comment themselves")) {
 			t.Errorf("%s: result = %+v", tc.name, out)
 		}
 		// The form shows the page and answer, starts empty, and requires a comment only
@@ -156,12 +156,12 @@ func TestSendFeedbackRateLimit(t *testing.T) {
 		return &mcp.ElicitResult{Action: "accept", Content: map[string]any{"comment": "Clear."}}
 	})
 	args := map[string]any{"url": feedbackPage, "helpful": true}
-	call(t, cs, "send_feedback", args, nil)
-	if text, isErr := callRaw(t, cs, "send_feedback", args, nil); !isErr || !strings.Contains(text, "rate limited") || len(*got) != 1 {
+	call(t, cs, "open_feedback_form", args, nil)
+	if text, isErr := callRaw(t, cs, "open_feedback_form", args, nil); !isErr || !strings.Contains(text, "rate limited") || len(*got) != 1 {
 		t.Errorf("within a minute = %q", text)
 	}
 	*now = now.Add(2 * time.Minute)
-	call(t, cs, "send_feedback", args, nil)
+	call(t, cs, "open_feedback_form", args, nil)
 	if len(*got) != 2 {
 		t.Errorf("sent %d", len(*got))
 	}
