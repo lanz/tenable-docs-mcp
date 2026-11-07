@@ -133,19 +133,20 @@ var prompts = []prompt{
 		},
 	},
 	{
-		Prompt: mcp.Prompt{Name: "check-my-answer", Title: "Check my answer",
-			Description: "Check an answer about a Tenable product against the docs.",
-			Arguments: []*mcp.PromptArgument{{Name: "answer", Title: "Answer", Description: "The answer to check, with its links", Required: true},
-				{Name: "question", Title: "Question", Description: "The question it answers"}}},
+		Prompt: mcp.Prompt{Name: "fact-check", Title: "Fact-check against the Tenable docs",
+			Description: "Check a reply, draft, or answer about a Tenable product against the docs: which claims are " +
+				"right, wrong, or unsupported, with links and corrections.",
+			Arguments: []*mcp.PromptArgument{{Name: "text", Title: "Text", Description: "The text to check, with its links", Required: true},
+				{Name: "question", Title: "Question", Description: "The question it answers, if any"}}},
 		text: func(a args) string {
 			var b strings.Builder
 			if q := a.get("question"); q != "" {
 				fmt.Fprintf(&b, "Question: %s\n\n", q)
 			}
-			fmt.Fprintf(&b, "Answer to check:\n\n%s\n\nCheck this answer against the Tenable documentation. First run "+
+			fmt.Fprintf(&b, "Text to check:\n\n%s\n\nFact-check this text against the Tenable documentation. First run "+
 				"verify_citations on it, for broken, older-version, or translated links. Then check each claim with "+
 				"search_docs and read_doc. List what's correct, what's wrong or out of date, and what the docs don't "+
-				"support, each with the docs link that shows it, and suggest corrections.", a.get("answer"))
+				"support, each with the docs link that shows it, and suggest corrections.", a.get("text"))
 			return b.String()
 		},
 	},

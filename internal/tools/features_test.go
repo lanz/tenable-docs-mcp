@@ -143,7 +143,7 @@ func TestPrompts(t *testing.T) {
 		}
 	}
 	slices.Sort(names)
-	if got := strings.Join(names, " "); got != "check-my-answer explain-setting how-to troubleshoot upgrade-check whats-new who-can" {
+	if got := strings.Join(names, " "); got != "explain-setting fact-check how-to troubleshoot upgrade-check whats-new who-can" {
 		t.Errorf("prompts = %s", got)
 	}
 	for _, tc := range []struct {
@@ -158,7 +158,7 @@ func TestPrompts(t *testing.T) {
 		{"whats-new", map[string]string{"product": "Security Center"}, []string{"What's new in Security Center the latest release?", "release_notes"}},
 		{"who-can", map[string]string{"action": "create a scan"}, []string{"need to create a scan?", "required_role"}},
 		{"upgrade-check", map[string]string{"product": "Nessus", "from_version": "10.5"}, []string{"from 10.5 to the latest version", "requirements"}},
-		{"check-my-answer", map[string]string{"answer": "Use port 8834.", "question": "Which port?"}, []string{"Question: Which port?", "Use port 8834.", "verify_citations"}},
+		{"fact-check", map[string]string{"text": "Use port 8834.", "question": "Which port?"}, []string{"Question: Which port?", "Text to check:\n\nUse port 8834.", "Fact-check this text", "verify_citations"}},
 	} {
 		text, err := getPrompt(t, cs, tc.name, tc.args)
 		if err != nil {
