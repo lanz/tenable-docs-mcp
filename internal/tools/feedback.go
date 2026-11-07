@@ -125,7 +125,7 @@ func registerFeedback(s *mcp.Server, env *Env) {
 				out.Status = "cancelled"
 				return summary("The user cancelled; nothing was sent."), out, nil
 			}
-			if send, _ := res.Content["send"].(bool); res.Action != "accept" || !send {
+			if res.Action != "accept" {
 				out.Status = "declined"
 				return summary("The user declined; nothing was sent."), out, nil
 			}
@@ -133,14 +133,10 @@ func registerFeedback(s *mcp.Server, env *Env) {
 			// Ask the user through the client; the SDK retries this call with the answer.
 			return &mcp.CallToolResult{
 				InputRequests: mcp.InputRequestMap{approvalID: &mcp.ElicitParams{
-					Message: "Send this feedback to Tenable's documentation team?\n\n" + p.Preview,
-					RequestedSchema: map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"send": map[string]any{"type": "boolean", "title": "Send it", "description": "Send this feedback to Tenable"},
-						},
-						"required": []string{"send"},
-					},
+					Message: "Send this feedback to Tenable's documentation team? Accept to send it.\n\n" + p.Preview,
+					// No fields: accepting is the approval. A checkbox only repeated it,
+					// and some clients won't accept until it's ticked.
+					RequestedSchema: map[string]any{"type": "object", "properties": map[string]any{}},
 				}},
 				RequestState: confirmToken(forApproval, p.Body(), now),
 			}, feedbackOut{}, nil

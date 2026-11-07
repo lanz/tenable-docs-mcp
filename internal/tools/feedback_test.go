@@ -129,8 +129,8 @@ func testElicitation(t *testing.T, protocol string) {
 		status string
 		sent   int
 	}{
-		{&mcp.ElicitResult{Action: "accept", Content: map[string]any{"send": true}}, "sent", 1},
-		{&mcp.ElicitResult{Action: "accept", Content: map[string]any{"send": false}}, "declined", 0},
+		{&mcp.ElicitResult{Action: "accept"}, "sent", 1},
+		{&mcp.ElicitResult{Action: "accept", Content: map[string]any{}}, "sent", 1},
 		{&mcp.ElicitResult{Action: "decline"}, "declined", 0},
 		{&mcp.ElicitResult{Action: "cancel"}, "cancelled", 0},
 	} {
