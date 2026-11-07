@@ -66,7 +66,7 @@ func TestSendFeedbackPreview(t *testing.T) {
 	var out feedbackOut
 	text := call(t, cs, "send_feedback", args, &out)
 	if out.Status != "preview" || out.Token == "" || len(*got) != 0 ||
-		!strings.Contains(text, "[Tenable Docs MCP test] The RHEL 10 steps are missing.") || !strings.Contains(text, "IP address") {
+		!strings.Contains(text, "[Tenable Docs MCP test] The RHEL 10 steps are missing.") || !strings.Contains(text, "documentation only") {
 		t.Fatalf("preview = %+v\n%s", out, text)
 	}
 	token := out.Token
@@ -145,7 +145,7 @@ func testElicitation(t *testing.T, protocol string) {
 		if out.Status != tc.status || out.Token != "" || len(*got) != tc.sent {
 			t.Errorf("%+v: out = %+v, %d sent", tc.answer, out, len(*got))
 		}
-		if !strings.Contains(asked, "Email: a@example.com") || !strings.Contains(asked, "IP address") {
+		if !strings.Contains(asked, "Email: a@example.com") || !strings.Contains(asked, "documentation only") {
 			t.Errorf("the user was asked:\n%s", asked)
 		}
 	}

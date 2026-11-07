@@ -29,7 +29,7 @@ func TestPrepare(t *testing.T) {
 	if err := json.Unmarshal(p.Body(), &body); err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]string{"currentUrl": page, "helpful": "no", "comment": "[Tenable Docs MCP 1.0.0] The port list is out of date.", "email": "a@example.com"}
+	want := map[string]string{"currentUrl": page, "helpful": "no", "comment": "[Tenable Docs MCP 1.0.0] The port list is out of date.", "email": "a@example.com", "source": "tenable-docs-mcp"}
 	if len(body) != len(want) {
 		t.Errorf("body = %v", body)
 	}
@@ -38,14 +38,14 @@ func TestPrepare(t *testing.T) {
 			t.Errorf("%s = %q, want %q", k, body[k], v)
 		}
 	}
-	for _, s := range []string{"Helpful: no", "Comment: [Tenable Docs MCP 1.0.0] The port", "Email: a@example.com", "IP address and country"} {
+	for _, s := range []string{"Helpful: no", "Comment: [Tenable Docs MCP 1.0.0] The port", "Email: a@example.com", "documentation only"} {
 		if !strings.Contains(p.Preview, s) {
 			t.Errorf("preview lacks %q:\n%s", s, p.Preview)
 		}
 	}
 	// Helpful, with nothing else: no comment or email in the body.
 	p, err = Prepare(Feedback{URL: "https://jp.docs.tenable.com/nessus/Content/Install.htm", Helpful: true}, "1.0.0")
-	if err != nil || string(p.Body()) != `{"currentUrl":"https://jp.docs.tenable.com/nessus/Content/Install.htm","helpful":"yes"}` ||
+	if err != nil || string(p.Body()) != `{"currentUrl":"https://jp.docs.tenable.com/nessus/Content/Install.htm","helpful":"yes","source":"tenable-docs-mcp"}` ||
 		!strings.Contains(p.Preview, "can't reply") {
 		t.Errorf("helpful = %s, %v", p.Body(), err)
 	}

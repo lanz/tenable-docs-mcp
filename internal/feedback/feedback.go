@@ -40,9 +40,11 @@ const (
 	PerDay    = 10
 )
 
-// Disclosure says what Tenable receives besides the feedback.
-const Disclosure = "Tenable receives the feedback with your IP address and country, as with the feedback widget on the docs pages. " +
-	"Feedback is for the documentation only, not for Tenable products."
+// Note ends every preview, as the feedback widget says it.
+const Note = "Note that feedback is for documentation only and not Tenable products."
+
+// Source identifies feedback sent through this server, in the request's source field.
+const Source = "tenable-docs-mcp"
 
 // Feedback is what the user wants to send about a page.
 type Feedback struct {
@@ -59,6 +61,7 @@ type payload struct {
 	Helpful    string `json:"helpful"`
 	Comment    string `json:"comment,omitempty"`
 	Email      string `json:"email,omitempty"`
+	Source     string `json:"source"`
 }
 
 // Prefix starts every comment, so the docs team can tell feedback sent through this
@@ -101,7 +104,7 @@ func Prepare(f Feedback, version string) (*Prepared, error) {
 	if n := utf8.RuneCountInString(comment); n > MaxComment {
 		return nil, fmt.Errorf("the comment is %d characters with its %d-character prefix; the limit is %d", n, utf8.RuneCountInString(Prefix(version)), MaxComment)
 	}
-	p := &Prepared{body: payload{CurrentURL: u.String(), Helpful: "no", Comment: comment, Email: email}}
+	p := &Prepared{body: payload{CurrentURL: u.String(), Helpful: "no", Comment: comment, Email: email, Source: Source}}
 	if f.Helpful {
 		p.body.Helpful = "yes"
 	}
@@ -115,7 +118,7 @@ func Prepare(f Feedback, version string) (*Prepared, error) {
 	} else {
 		b.WriteString("Email: none (the docs team can't reply)\n")
 	}
-	b.WriteString(Disclosure)
+	b.WriteString(Note)
 	p.Preview = b.String()
 	return p, nil
 }
