@@ -45,6 +45,9 @@ func TestInitialize(t *testing.T) {
 	if !strings.Contains(init.Instructions, "developer.tenable.com/mcp") {
 		t.Error("instructions should send API questions to the Developer Portal MCP")
 	}
+	if c := init.Capabilities; c == nil || c.Tools == nil || c.Resources == nil || c.Prompts == nil || c.Completions == nil {
+		t.Errorf("capabilities = %+v", c)
+	}
 }
 
 func TestToolAnnotations(t *testing.T) {

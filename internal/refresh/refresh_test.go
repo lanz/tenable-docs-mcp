@@ -97,7 +97,8 @@ func setup(t *testing.T) (*index.Index, *fakeSite) {
 
 func TestPages(t *testing.T) {
 	ix, live := setup(t)
-	r := &Refresher{Index: ix, Source: live}
+	var progress []string
+	r := &Refresher{Index: ix, Source: live, Progress: func(done, total int) { progress = append(progress, fmt.Sprintf("%d/%d", done, total)) }}
 	rep, err := r.Pages(ctx, []string{
 		en + "nessus/Content/Same.htm#x", en + "nessus/Content/Same.htm",
 		en + "nessus/Content/Changed.htm", en + "nessus/Content/Gone.htm",
@@ -106,6 +107,10 @@ func TestPages(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	// The duplicate is counted once; the Japanese page is skipped (no shard).
+	if strings.Join(progress, " ") != "1/7 2/7 3/7 4/7 5/7 6/7 7/7" {
+		t.Errorf("progress = %v", progress)
 	}
 	if rep.Checked != 4 || rep.Unchanged != 1 || rep.Updated != 1 || rep.Removed != 1 || rep.Skipped != 3 || len(rep.Failed) != 1 {
 		t.Errorf("report = %+v", rep)

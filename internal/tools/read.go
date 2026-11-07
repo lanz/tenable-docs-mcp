@@ -85,84 +85,18 @@ func registerRead(s *mcp.Server, env *Env) {
 		if err != nil {
 			return nil, readOut{}, err
 		}
-		pageURL, anchor, _ := strings.Cut(u, "#")
-		var out readOut
-		err = env.withPage(ctx, pageURL, func(sh *index.Shard, info *index.PageInfo) error {
-			sections, err := sh.Sections(ctx, pageURL)
-			if err != nil {
-				return err
-			}
-			out = readOut{URL: pageURL, Title: info.Title, Product: info.Product, GuideType: info.GuideType,
-				Version: info.Version, Language: info.Site, Location: strings.Join(info.TocTrail, " › "),
-				RequiredRoles: roleTexts(info.Roles), LastModified: info.LastMod}
-			body := ""
-			chosen := -1
-			if anchor != "" {
-				for i, sec := range sections {
-					if strings.EqualFold(sec.Anchor, anchor) {
-						chosen = i
-						break
-					}
-				}
-			}
-			if chosen >= 0 {
-				sec := sections[chosen]
-				out.URL, out.Heading, body = sec.URL, sec.Heading, sec.Body
-				if chosen > 0 {
-					out.Previous = &link{Title: sections[chosen-1].Heading, URL: sections[chosen-1].URL}
-				}
-				if chosen+1 < len(sections) {
-					out.Next = &link{Title: sections[chosen+1].Heading, URL: sections[chosen+1].URL}
-				}
-			} else {
-				var parts []string
-				for _, sec := range sections {
-					parts = append(parts, sec.Body)
-				}
-				body = strings.Join(parts, "\n\n")
-			}
-			if out.Previous == nil || out.Next == nil {
-				prev, next, err := tocNeighbors(ctx, sh, info)
-				if err != nil {
-					return err
-				}
-				if out.Previous == nil && (chosen <= 0) {
-					out.Previous = prev
-				}
-				if out.Next == nil && (chosen < 0 || chosen == len(sections)-1) {
-					out.Next = next
-				}
-			}
-			maxChars := in.MaxChars
-			switch {
-			case maxChars == 0:
-				maxChars = defaultMaxChars
-			case maxChars < 1000:
-				maxChars = 1000
-			case maxChars > maxMaxChars:
-				maxChars = maxMaxChars
-			}
-			chunks := splitText(body, maxChars)
-			out.Parts = len(chunks)
-			out.Part = max(in.Part, 1)
-			if out.Part > out.Parts {
-				return fmt.Errorf("part %d doesn't exist: %s has %d parts", out.Part, out.URL, out.Parts)
-			}
-			out.Markdown = contextHeader(out, anchor != "" && chosen < 0) + chunks[out.Part-1]
-			return nil
-		})
+		maxChars := in.MaxChars
+		switch {
+		case maxChars == 0:
+			maxChars = defaultMaxChars
+		case maxChars < 1000:
+			maxChars = 1000
+		case maxChars > maxMaxChars:
+			maxChars = maxMaxChars
+		}
+		out, err := env.read(ctx, u, in.Part, maxChars)
 		if err != nil {
 			return nil, readOut{}, err
-		}
-		if env.Engine != nil {
-			v, err := env.Engine.Variants(ctx, pageURL)
-			if err != nil {
-				return nil, readOut{}, err
-			}
-			out.variantsOut = toVariants(v)
-			if v.English != "" && anchor != "" {
-				out.English = v.English + "#" + anchor
-			}
 		}
 		return summary("%s", out.Markdown), out, nil
 	})
@@ -201,21 +135,106 @@ func registerRead(s *mcp.Server, env *Env) {
 			}
 			return summary("%s", outlineSummary(out)), out, nil
 		}
-		g, err := findGuide(ctx, env, in.Guide, in.Language)
+		out, err := env.guideOutline(ctx, in.Guide, in.Language)
 		if err != nil {
 			return nil, outlineOut{}, err
 		}
-		out := outlineOut{Title: g.path, URL: g.root, Items: []outlineItem{}}
-		var walk func([]*site.TocEntry, int)
-		walk = func(entries []*site.TocEntry, depth int) {
-			for _, e := range entries {
-				out.Items = append(out.Items, outlineItem{Level: depth, Title: e.Title, URL: e.URL})
-				walk(e.Children, depth+1)
-			}
-		}
-		walk(g.toc, 1)
 		return summary("%s", outlineSummary(out)), out, nil
 	})
+}
+
+// read reads a page, or the section its #anchor names, in parts of at most
+// maxChars characters.
+func (e *Env) read(ctx context.Context, u string, part, maxChars int) (readOut, error) {
+	pageURL, anchor, _ := strings.Cut(u, "#")
+	var out readOut
+	err := e.withPage(ctx, pageURL, func(sh *index.Shard, info *index.PageInfo) error {
+		sections, err := sh.Sections(ctx, pageURL)
+		if err != nil {
+			return err
+		}
+		out = readOut{URL: pageURL, Title: info.Title, Product: info.Product, GuideType: info.GuideType,
+			Version: info.Version, Language: info.Site, Location: strings.Join(info.TocTrail, " › "),
+			RequiredRoles: roleTexts(info.Roles), LastModified: info.LastMod}
+		body := ""
+		chosen := -1
+		if anchor != "" {
+			for i, sec := range sections {
+				if strings.EqualFold(sec.Anchor, anchor) {
+					chosen = i
+					break
+				}
+			}
+		}
+		if chosen >= 0 {
+			sec := sections[chosen]
+			out.URL, out.Heading, body = sec.URL, sec.Heading, sec.Body
+			if chosen > 0 {
+				out.Previous = &link{Title: sections[chosen-1].Heading, URL: sections[chosen-1].URL}
+			}
+			if chosen+1 < len(sections) {
+				out.Next = &link{Title: sections[chosen+1].Heading, URL: sections[chosen+1].URL}
+			}
+		} else {
+			var parts []string
+			for _, sec := range sections {
+				parts = append(parts, sec.Body)
+			}
+			body = strings.Join(parts, "\n\n")
+		}
+		if out.Previous == nil || out.Next == nil {
+			prev, next, err := tocNeighbors(ctx, sh, info)
+			if err != nil {
+				return err
+			}
+			if out.Previous == nil && (chosen <= 0) {
+				out.Previous = prev
+			}
+			if out.Next == nil && (chosen < 0 || chosen == len(sections)-1) {
+				out.Next = next
+			}
+		}
+		chunks := splitText(body, maxChars)
+		out.Parts = len(chunks)
+		out.Part = max(part, 1)
+		if out.Part > out.Parts {
+			return fmt.Errorf("part %d doesn't exist: %s has %d parts", out.Part, out.URL, out.Parts)
+		}
+		out.Markdown = contextHeader(out, anchor != "" && chosen < 0) + chunks[out.Part-1]
+		return nil
+	})
+	if err != nil {
+		return readOut{}, err
+	}
+	if e.Engine != nil {
+		v, err := e.Engine.Variants(ctx, pageURL)
+		if err != nil {
+			return readOut{}, err
+		}
+		out.variantsOut = toVariants(v)
+		if v.English != "" && anchor != "" {
+			out.English = v.English + "#" + anchor
+		}
+	}
+	return out, nil
+}
+
+// guideOutline lists a guide's pages from its table of contents.
+func (e *Env) guideOutline(ctx context.Context, guide, language string) (outlineOut, error) {
+	g, err := findGuide(ctx, e, guide, language)
+	if err != nil {
+		return outlineOut{}, err
+	}
+	out := outlineOut{Title: g.path, URL: g.root, Items: []outlineItem{}}
+	var walk func([]*site.TocEntry, int)
+	walk = func(entries []*site.TocEntry, depth int) {
+		for _, t := range entries {
+			out.Items = append(out.Items, outlineItem{Level: depth, Title: t.Title, URL: t.URL})
+			walk(t.Children, depth+1)
+		}
+	}
+	walk(g.toc, 1)
+	return out, nil
 }
 
 // contextHeader says where content comes from, for quoting it.

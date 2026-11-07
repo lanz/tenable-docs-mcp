@@ -58,6 +58,8 @@ func Register(s *mcp.Server, env *Env) {
 	registerSpecific(s, env)
 	registerHonest(s, env)
 	registerFeedback(s, env)
+	registerResources(s, env)
+	registerPrompts(s)
 }
 
 var closedWorld = false

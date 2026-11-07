@@ -247,7 +247,7 @@ func registerHonest(s *mcp.Server, env *Env) {
 		if !env.AllowRefresh || env.Live == nil {
 			return nil, refreshOut{}, errors.New("refreshing the index isn't available in this mode")
 		}
-		r := &refresh.Refresher{Index: env.Index, Source: env.Live}
+		r := &refresh.Refresher{Index: env.Index, Source: env.Live, Progress: progressFor(ctx, req, "Checking pages")}
 		var rep refresh.Report
 		var err error
 		switch {
@@ -287,7 +287,9 @@ func registerHonest(s *mcp.Server, env *Env) {
 		}
 		for _, f := range rep.Failed {
 			text += "\nFailed: " + f
+			env.logf(ctx, req.Session, "warning", "refresh failed: %s", f)
 		}
+		env.logf(ctx, req.Session, "info", "%s", text)
 		return summary("%s", text), refreshOut{rep}, nil
 	})
 }
