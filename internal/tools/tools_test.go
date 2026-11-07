@@ -52,7 +52,11 @@ var nessusToc = []*site.TocEntry{{Title: "Welcome to Nessus", URL: en + "nessus/
 	{Title: "Long Page", URL: en + "nessus/Content/Long.htm"},
 }}}
 
-func buildIndex(t *testing.T) *index.Index {
+func buildIndex(t *testing.T) *index.Index { return buildIndexFrom(t, fixture) }
+
+// buildIndexFrom builds an index from made-up pages, with the nessus guide's table of
+// contents.
+func buildIndexFrom(t *testing.T, pages []fixturePage) *index.Index {
 	t.Helper()
 	ix, err := index.Open(filepath.Join(t.TempDir(), "index"))
 	if err != nil {
@@ -60,10 +64,10 @@ func buildIndex(t *testing.T) *index.Index {
 	}
 	t.Cleanup(func() { ix.Close() })
 	byKey := map[index.Key][]fixturePage{}
-	for _, p := range fixture {
+	for _, p := range pages {
 		byKey[p.key] = append(byKey[p.key], p)
 	}
-	for k, pages := range byKey {
+	for k, keyPages := range byKey {
 		b, err := ix.Build(k)
 		if err != nil {
 			t.Fatal(err)
@@ -79,7 +83,7 @@ func buildIndex(t *testing.T) *index.Index {
 			if err := tx.SetMeta("built_at", "2026-11-06T00:00:00Z"); err != nil {
 				return err
 			}
-			for _, fp := range pages {
+			for _, fp := range keyPages {
 				u := s.BaseURL() + fp.path
 				p, err := page.Parse([]byte(`<html lang="`+s.Lang+`"><div id="mc-main-content">`+fp.body+`</div></html>`), u, nil)
 				if err != nil {

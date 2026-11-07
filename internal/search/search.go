@@ -289,6 +289,9 @@ const (
 	boostLatestYear     = 1.6 // "what's new" questions, on the newest year's release notes
 	penaltyOlderYear    = 0.8
 	penaltyMissingWord  = 0.6 // sections missing one of the question's words
+	boostGuide          = 1.6 // the question names the page's guide (Director, Enterprise Manager)
+	boostCoreProduct    = 1.4 // Tenable Core pages for the product the question names with it
+	penaltyCoreOther    = 0.7 // … and Tenable Core pages for other products
 	widenBelow          = 30
 	maxPerPage          = 2
 )
@@ -309,6 +312,57 @@ var (
 	parenthetical = regexp.MustCompile(`\([^)]*\)`)
 	yearRe        = regexp.MustCompile(`\b(19|20)\d\d\b`)
 )
+
+// CoreProduct returns the product a question names along with Tenable Core, which runs
+// several products as an appliance: Network Monitor in "Tenable Core ports for Network
+// Monitor". It returns "" unless the products are Tenable Core and exactly one other.
+func CoreProduct(products []string) string {
+	if len(products) != 2 || !slices.Contains(products, "Tenable Core") {
+		return ""
+	}
+	if products[0] == "Tenable Core" {
+		return products[1]
+	}
+	return products[0]
+}
+
+// namesGuide reports whether a question names a page's guide below its product: every
+// word of one of the guide path's later segments ("director" in
+// security-center/director, "enterprise manager" in OT-security/enterprise-manager) is
+// among the question's words.
+func namesGuide(words []string, guide string) bool {
+	segs := strings.Split(guide, "/")
+	if len(segs) < 2 || len(words) == 0 {
+		return false
+	}
+	for _, seg := range segs[1:] {
+		parts := strings.FieldsFunc(strings.ToLower(seg), func(r rune) bool { return r == '-' || r == '_' })
+		if len(parts) == 0 || versionSegment(seg) {
+			continue
+		}
+		// A segment that's a product's name (tenable-core/Nessus) names the product, not
+		// a guide of its own.
+		if _, isProduct := ProductNamed(strings.Join(parts, " ")); isProduct {
+			continue
+		}
+		all := true
+		for _, w := range parts {
+			if !slices.Contains(words, w) {
+				all = false
+				break
+			}
+		}
+		if all {
+			return true
+		}
+	}
+	return false
+}
+
+// versionSegment reports whether a guide path segment is a version (10_8).
+func versionSegment(s string) bool {
+	return s != "" && strings.Trim(s, "0123456789_") == ""
+}
 
 // stem crudely reduces an English word to a stem, so "Requirements" and "requirement"
 // compare equal in titles.
@@ -399,6 +453,15 @@ func rerank(cands []index.Candidate, p Parsed, productFilter string, limit int) 
 				score *= boostRelatedProduct
 			}
 		}
+		// Tenable Core and the product it runs ("Tenable Core ports for Network Monitor"):
+		// the Tenable Core pages for that product.
+		if other := CoreProduct(p.Products); other != "" && c.Product == "Tenable Core" {
+			if slices.Contains(c.Related, other) {
+				score *= boostCoreProduct
+			} else {
+				score *= penaltyCoreOther
+			}
+		}
 		isRelease := c.GuideType == "Release Notes" || strings.HasPrefix(c.Guide, "release-notes")
 		switch p.Intent {
 		case HowTo:
@@ -421,6 +484,9 @@ func rerank(cands []index.Candidate, p Parsed, productFilter string, limit int) 
 			if strings.Contains(strings.ToLower(c.Title), "requirement") {
 				score *= boostReqTitle
 			}
+		}
+		if namesGuide(p.Words, c.Guide) {
+			score *= boostGuide
 		}
 		if p.Install && p.Intent != Requirements && c.Requirements > 0 {
 			score *= boostInstallReqs

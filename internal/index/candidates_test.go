@@ -49,6 +49,8 @@ func TestCandidates(t *testing.T) {
 		{Filter{Product: "Nessus", Version: "10.8"}, 1},
 		{Filter{Contains: []string{"OLDER"}}, 1},
 		{Filter{Contains: []string{"too", "scanner"}}, 1},
+		{Filter{Product: "Security Center", Related: "Nessus"}, 1},
+		{Filter{Product: "Security Center", Related: "Agent"}, 0},
 	} {
 		if got := count(c.f); got != c.want {
 			t.Errorf("%+v: %d candidates, want %d", c.f, got, c.want)

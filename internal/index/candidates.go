@@ -15,7 +15,10 @@ import (
 
 // Filter narrows a search to pages that match every field that's set.
 type Filter struct {
-	Product   string
+	Product string
+	// Related is one of a page's related products: for Tenable Core, the product the
+	// appliance runs (Tenable Core pages for Network Monitor).
+	Related   string
 	GuideType string
 	// Guide is a guide's path ("nessus", "nessus/10_8"); pages in that guide match.
 	Guide string
@@ -103,6 +106,10 @@ func (s *Shard) Candidates(ctx context.Context, query string, f Filter, limit in
 	if f.Version != "" {
 		where = append(where, "p.version = ?")
 		args = append(args, f.Version)
+	}
+	if f.Related != "" {
+		where = append(where, "EXISTS (SELECT 1 FROM json_each(p.related) WHERE value = ?)")
+		args = append(args, f.Related)
 	}
 	args = append(append(scoreArgs, args...), limit)
 	rows, err := s.db.QueryContext(ctx, `
