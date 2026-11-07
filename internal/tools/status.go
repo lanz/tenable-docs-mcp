@@ -56,44 +56,53 @@ func registerStatus(s *mcp.Server, env *Env) {
 			"whether the index is built.",
 		Annotations: readOnly("Index status"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in statusIn) (*mcp.CallToolResult, statusOut, error) {
-		out := statusOut{Server: env.Info.Name, Version: env.Info.Version, GoVersion: runtime.Version(), Index: indexState{State: "not built"}}
-		if env.Index != nil {
-			out.Index.Folder = env.Index.Dir
-			for _, k := range env.Index.Keys() {
-				err := env.Index.With(k, func(sh *index.Shard) error {
-					counts, err := sh.Counts(ctx)
-					if err != nil {
-						return err
-					}
-					st := shardState{Shard: k.String(), Pages: counts["pages"], Sections: counts["sections"]}
-					st.Schema, _ = sh.SchemaVersion(ctx)
-					st.BuiltAt, _ = sh.Meta(ctx, "built_at")
-					st.LastIndexed, _ = sh.LastIndexed(ctx)
-					out.Index.Shards = append(out.Index.Shards, st)
-					return nil
-				})
+		out, text, err := env.status(ctx)
+		if err != nil {
+			return nil, statusOut{}, err
+		}
+		return summary("%s", text), out, nil
+	})
+}
+
+// status reports the server's version and what the index holds, with a summary.
+func (e *Env) status(ctx context.Context) (statusOut, string, error) {
+	out := statusOut{Server: e.Info.Name, Version: e.Info.Version, GoVersion: runtime.Version(), Index: indexState{State: "not built"}}
+	if e.Index != nil {
+		out.Index.Folder = e.Index.Dir
+		for _, k := range e.Index.Keys() {
+			err := e.Index.With(k, func(sh *index.Shard) error {
+				counts, err := sh.Counts(ctx)
 				if err != nil {
-					return nil, statusOut{}, err
+					return err
 				}
+				st := shardState{Shard: k.String(), Pages: counts["pages"], Sections: counts["sections"]}
+				st.Schema, _ = sh.SchemaVersion(ctx)
+				st.BuiltAt, _ = sh.Meta(ctx, "built_at")
+				st.LastIndexed, _ = sh.LastIndexed(ctx)
+				out.Index.Shards = append(out.Index.Shards, st)
+				return nil
+			})
+			if err != nil {
+				return statusOut{}, "", err
 			}
 		}
-		if len(out.Index.Shards) > 0 {
-			out.Index.State = "ready"
-		} else {
-			out.Note = "The documentation index isn't built yet, so the search and reading tools have nothing to work with."
-		}
-		var b strings.Builder
-		fmt.Fprintf(&b, "%s %s; index %s", out.Server, out.Version, out.Index.State)
-		if out.Index.Folder != "" {
-			fmt.Fprintf(&b, " in %s", out.Index.Folder)
-		}
-		b.WriteString(".")
-		for _, sh := range out.Index.Shards {
-			fmt.Fprintf(&b, "\n- %s: %d pages, %d sections, last indexed %s", sh.Shard, sh.Pages, sh.Sections, sh.LastIndexed)
-		}
-		if out.Note != "" {
-			b.WriteString("\n" + out.Note)
-		}
-		return summary("%s", b.String()), out, nil
-	})
+	}
+	if len(out.Index.Shards) > 0 {
+		out.Index.State = "ready"
+	} else {
+		out.Note = "The documentation index isn't built yet, so the search and reading tools have nothing to work with."
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s %s; index %s", out.Server, out.Version, out.Index.State)
+	if out.Index.Folder != "" {
+		fmt.Fprintf(&b, " in %s", out.Index.Folder)
+	}
+	b.WriteString(".")
+	for _, sh := range out.Index.Shards {
+		fmt.Fprintf(&b, "\n- %s: %d pages, %d sections, last indexed %s", sh.Shard, sh.Pages, sh.Sections, sh.LastIndexed)
+	}
+	if out.Note != "" {
+		b.WriteString("\n" + out.Note)
+	}
+	return out, b.String(), nil
 }
