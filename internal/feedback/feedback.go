@@ -4,7 +4,7 @@
 
 // Package feedback sends page feedback to Tenable's documentation team, through the
 // endpoint the feedback widget on every docs page uses, so it reaches the team the same
-// way. It only sends what the user has approved; callers show the Preview first.
+// way. Callers send only what the user wrote and approved.
 package feedback
 
 import (

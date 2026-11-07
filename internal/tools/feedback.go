@@ -15,35 +15,36 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lanz/tenable-docs-mcp/internal/feedback"
 )
 
+// The agent chooses only the page and whether it helped. The user writes the comment
+// and email in a form their client shows, so the agent can't put words in their mouth.
 type feedbackIn struct {
 	URL     string `json:"url" jsonschema:"the docs page the feedback is about"`
-	Helpful bool   `json:"helpful" jsonschema:"whether the page was helpful"`
-	Comment string `json:"comment,omitempty" jsonschema:"what was helpful, wrong, or missing, in the user's words; required when the page wasn't helpful; at most about 970 characters"`
-	Email   string `json:"email,omitempty" jsonschema:"the user's email, only if they want the docs team to reply"`
-	Confirm string `json:"confirm_token,omitempty" jsonschema:"the token from the preview, after the user approved it; the other fields must be unchanged"`
+	Helpful bool   `json:"helpful" jsonschema:"whether the user found the page helpful, from what they said"`
 }
 
 type feedbackOut struct {
-	// Status is preview, sent, declined, or cancelled.
-	Status  string `json:"status" jsonschema:"preview (shown, not sent), sent, declined, or cancelled"`
-	Preview string `json:"preview" jsonschema:"exactly what is or would be sent"`
-	Token   string `json:"confirm_token,omitempty" jsonschema:"for a preview: pass it back, with the same fields, once the user approves"`
+	Status string `json:"status" jsonschema:"sent, declined, cancelled, or no_form (this client can't show the feedback form; nothing was sent)"`
+	// Sent is exactly what was sent, when it was.
+	Sent string `json:"sent,omitempty" jsonschema:"exactly what was sent"`
+	// Page is where the user can use the docs site's own feedback form instead.
+	Page string `json:"page"`
 }
 
-// approvalID names the request that asks the user to approve feedback.
-const approvalID = "approve"
+// formID names the form that asks the user for their feedback.
+const formID = "feedback"
 
-// tokenTTL is how long a preview's token works.
-const tokenTTL = 15 * time.Minute
+// formTTL is how long the user has to fill in the form.
+const formTTL = 30 * time.Minute
 
-// confirmKey signs preview tokens; it lasts as long as the process.
-var confirmKey = func() []byte {
+// formKey signs form state; it lasts as long as the process.
+var formKey = func() []byte {
 	k := make([]byte, 32)
 	if _, err := rand.Read(k); err != nil {
 		panic(err)
@@ -51,36 +52,28 @@ var confirmKey = func() []byte {
 	return k
 }()
 
-// Token purposes: a preview the model passes back, or an approval request the client
-// answers. Neither works as the other.
-const (
-	forPreview  = "preview"
-	forApproval = "approval"
-)
-
-// confirmToken binds a token to its purpose, the exact request body, and a time.
-func confirmToken(purpose string, body []byte, at time.Time) string {
+// formState binds a form to the page, the helpful answer, and a time, so the answer
+// comes back to the feedback it was asked for.
+func formState(page string, helpful bool, at time.Time) string {
 	var ts [8]byte
 	binary.BigEndian.PutUint64(ts[:], uint64(at.Unix()))
-	m := hmac.New(sha256.New, confirmKey)
-	m.Write([]byte(purpose))
-	m.Write([]byte{0})
+	m := hmac.New(sha256.New, formKey)
 	m.Write(ts[:])
-	m.Write(body)
+	fmt.Fprintf(m, "%t\x00%s", helpful, page)
 	return base64.RawURLEncoding.EncodeToString(append(ts[:], m.Sum(nil)[:16]...))
 }
 
-func checkToken(purpose, token string, body []byte, now time.Time) error {
-	raw, err := base64.RawURLEncoding.DecodeString(token)
+func checkFormState(state, page string, helpful bool, now time.Time) error {
+	raw, err := base64.RawURLEncoding.DecodeString(state)
 	if err != nil || len(raw) != 24 {
-		return errors.New("that confirm_token isn't one this server gave; preview the feedback again")
+		return errors.New("that form answer isn't for a form this server showed; nothing was sent")
 	}
 	at := time.Unix(int64(binary.BigEndian.Uint64(raw[:8])), 0)
-	if !hmac.Equal([]byte(confirmToken(purpose, body, at)), []byte(token)) {
-		return errors.New("the feedback changed since the user approved the preview, or the token is from another session; preview it again and ask the user")
+	if !hmac.Equal([]byte(formState(page, helpful, at)), []byte(state)) {
+		return errors.New("that form answer is for other feedback; nothing was sent")
 	}
-	if now.Sub(at) > tokenTTL || at.After(now.Add(time.Minute)) {
-		return errors.New("the preview's token has expired; preview the feedback again and ask the user")
+	if now.Sub(at) > formTTL || at.After(now.Add(time.Minute)) {
+		return errors.New("the feedback form expired; nothing was sent")
 	}
 	return nil
 }
@@ -89,14 +82,12 @@ func registerFeedback(s *mcp.Server, env *Env) {
 	notDestructive, open := false, true
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "send_feedback",
-		Description: "Send feedback about a docs page to Tenable's documentation team, as the page's feedback " +
-			"widget does: whether it helped, and what was wrong or missing. Only when the user asks to send " +
-			"feedback, with the comment in their words; feedback is for the documentation, not for Tenable " +
-			"products. The user always sees exactly what will be sent first: either their client asks them, or " +
-			"this tool returns a preview and a confirm_token, and nothing is sent until you call it again with " +
-			"the token after the user approves. Never approve for them. An email is optional, for the docs team " +
-			"to reply: include one only if the user gives it, and when there's no prompt from their client, " +
-			"ask whether they want to. Never fill it in from elsewhere. Leave out customer details and secrets.",
+		Description: "Open a form in which the user writes feedback about a docs page for Tenable's documentation " +
+			"team, like the feedback form on each docs page. Use it when the user wants to give feedback on a " +
+			"page. Choose the page and whether it was helpful from what the user said; the user writes the " +
+			"comment, and their email if they want a reply, in the form. You can't write feedback for them. " +
+			"Feedback is for the documentation, not for Tenable products. If the user's client can't show " +
+			"forms, nothing is sent; give them the page's link to use its own feedback form.",
 		Annotations: &mcp.ToolAnnotations{Title: "Send docs feedback", DestructiveHint: &notDestructive, OpenWorldHint: &open},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in feedbackIn) (*mcp.CallToolResult, feedbackOut, error) {
 		if env.Feedback == nil {
@@ -106,75 +97,95 @@ func registerFeedback(s *mcp.Server, env *Env) {
 		if err != nil {
 			return nil, feedbackOut{}, err
 		}
-		p, err := feedback.Prepare(feedback.Feedback{URL: u, Helpful: in.Helpful, Comment: in.Comment, Email: in.Email}, env.Info.Version)
-		if err != nil {
+		// Check the page now, before showing the user a form.
+		if _, err := feedback.Prepare(feedback.Feedback{URL: u, Helpful: true}, env.Info.Version); err != nil {
 			return nil, feedbackOut{}, err
 		}
-		out := feedbackOut{Preview: p.Preview}
+		out := feedbackOut{Page: u}
 		now := env.now()
 		switch {
-		case in.Confirm != "":
-			if err := checkToken(forPreview, in.Confirm, p.Body(), now); err != nil {
-				return nil, feedbackOut{}, err
-			}
 		case req.Params.InputResponses != nil:
-			// The user's answer to the approval request below. The request state binds
-			// it to this exact feedback.
-			if err := checkToken(forApproval, req.Params.RequestState, p.Body(), now); err != nil {
-				return nil, feedbackOut{}, err
-			}
-			res, _ := req.Params.InputResponses[approvalID].(*mcp.ElicitResult)
-			if res == nil || res.Action == "cancel" {
-				out.Status = "cancelled"
-				return summary("The user cancelled; nothing was sent."), out, nil
-			}
-			if res.Action != "accept" {
-				out.Status = "declined"
-				return summary("The user declined; nothing was sent."), out, nil
-			}
-			// The user may have added an email in the prompt.
-			if email, _ := res.Content["email"].(string); in.Email == "" && strings.TrimSpace(email) != "" {
-				p, err = feedback.Prepare(feedback.Feedback{URL: u, Helpful: in.Helpful, Comment: in.Comment, Email: email}, env.Info.Version)
-				if err != nil {
-					return nil, feedbackOut{}, fmt.Errorf("not sent: %w", err)
-				}
-				out.Preview = p.Preview
-			}
+			return env.sendForm(ctx, req, in, out, now)
 		case canElicit(req):
-			// Ask the user through the client; the SDK retries this call with the answer.
-			// Accepting is the approval, so the prompt has no required fields: some
-			// clients won't accept until a required checkbox is ticked.
-			msg := "Send this feedback to Tenable's documentation team? Accept to send it.\n\n" + p.Preview
-			props := map[string]any{}
-			if in.Email == "" {
-				msg += "\n\nTo get a reply from the docs team, add your email. It's optional."
-				props["email"] = map[string]any{"type": "string", "title": "Email (optional)", "description": "For the docs team to reply; leave blank for none"}
-			}
+			// Show the form; the SDK calls this tool again with what the user entered.
 			return &mcp.CallToolResult{
-				InputRequests: mcp.InputRequestMap{approvalID: &mcp.ElicitParams{
-					Message:         msg,
-					RequestedSchema: map[string]any{"type": "object", "properties": props},
-				}},
-				RequestState: confirmToken(forApproval, p.Body(), now),
+				InputRequests: mcp.InputRequestMap{formID: feedbackForm(u, in.Helpful, env.Info.Version)},
+				RequestState:  formState(u, in.Helpful, now),
 			}, feedbackOut{}, nil
 		default:
-			out.Status, out.Token = "preview", confirmToken(forPreview, p.Body(), now)
-			return summary("Not sent yet. Show the user this preview, exactly, and ask whether to send it:\n\n%s\n\n"+
-				"If they approve, call send_feedback again with the same fields and confirm_token %q. "+
-				"If they want changes, make them and preview again.", p.Preview, out.Token), out, nil
+			out.Status = "no_form"
+			return summary("Nothing was sent. This client can't show the form in which the user writes their feedback, "+
+				"so give them the page's link: the feedback form at the bottom of the page sends it to Tenable's "+
+				"documentation team. %s", u), out, nil
 		}
-		if err := env.Feedback.Send(ctx, p); err != nil {
-			if errors.Is(err, feedback.ErrRateLimited) {
-				return nil, feedbackOut{}, fmt.Errorf("not sent: %w", err)
-			}
-			return nil, feedbackOut{}, err
-		}
-		out.Status = "sent"
-		return summary("Sent to Tenable's documentation team:\n\n%s", p.Preview), out, nil
 	})
 }
 
-// canElicit reports whether the client can ask the user to approve feedback itself.
+// feedbackForm asks the user for their comment and, optionally, their email. Both start
+// empty. The comment is required only when the page wasn't helpful, as on the docs
+// site, and accepting the form is the approval.
+func feedbackForm(page string, helpful bool, version string) *mcp.ElicitParams {
+	answer, need := "yes", "optional"
+	if !helpful {
+		answer, need = "no", "required"
+	}
+	limit := feedback.MaxComment - utf8.RuneCountInString(feedback.Prefix(version))
+	comment := map[string]any{
+		"type": "string", "title": "Comment", "maxLength": limit,
+		"description": "What was helpful, wrong, or missing (" + need + ")",
+	}
+	if !helpful {
+		comment["minLength"] = 1
+	}
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"comment": comment,
+			"email":   map[string]any{"type": "string", "title": "Email (optional)", "description": "Only if you want the docs team to reply"},
+		},
+	}
+	if !helpful {
+		schema["required"] = []string{"comment"}
+	}
+	return &mcp.ElicitParams{
+		Message: "Feedback for Tenable's documentation team\n\nPage: " + page + "\nHelpful: " + answer +
+			"\n\nWrite your comment (" + need + "), and add your email only if you want a reply. " +
+			"Accept sends what you enter, as you typed it.\n" + feedback.Note,
+		RequestedSchema: schema,
+	}
+}
+
+// sendForm sends what the user entered in the form.
+func (e *Env) sendForm(ctx context.Context, req *mcp.CallToolRequest, in feedbackIn, out feedbackOut, now time.Time) (*mcp.CallToolResult, feedbackOut, error) {
+	if err := checkFormState(req.Params.RequestState, out.Page, in.Helpful, now); err != nil {
+		return nil, feedbackOut{}, err
+	}
+	res, _ := req.Params.InputResponses[formID].(*mcp.ElicitResult)
+	if res == nil || res.Action == "cancel" {
+		out.Status = "cancelled"
+		return summary("The user cancelled; nothing was sent."), out, nil
+	}
+	if res.Action != "accept" {
+		out.Status = "declined"
+		return summary("The user declined; nothing was sent."), out, nil
+	}
+	comment, _ := res.Content["comment"].(string)
+	email, _ := res.Content["email"].(string)
+	p, err := feedback.Prepare(feedback.Feedback{URL: out.Page, Helpful: in.Helpful, Comment: comment, Email: email}, e.Info.Version)
+	if err != nil {
+		return nil, feedbackOut{}, fmt.Errorf("not sent: %w", err)
+	}
+	if err := e.Feedback.Send(ctx, p); err != nil {
+		if errors.Is(err, feedback.ErrRateLimited) {
+			return nil, feedbackOut{}, fmt.Errorf("not sent: %w", err)
+		}
+		return nil, feedbackOut{}, err
+	}
+	out.Status, out.Sent = "sent", p.Preview
+	return summary("Sent the user's feedback to Tenable's documentation team:\n\n%s", strings.TrimSpace(p.Preview)), out, nil
+}
+
+// canElicit reports whether the client can show the user a form.
 func canElicit(req *mcp.CallToolRequest) bool {
 	if req == nil || req.Session == nil {
 		return false
