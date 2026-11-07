@@ -44,6 +44,9 @@ type Refresher struct {
 	Source site.Source
 	// Agent is the robots.txt user-agent token to follow rules for.
 	Agent string
+	// Progress, when set, is called as each page is checked or skipped, with how many
+	// of how many have been reached.
+	Progress func(done, total int)
 
 	robots map[string]*site.Robots
 }
@@ -72,12 +75,20 @@ func (r *Refresher) Pages(ctx context.Context, urls []string) (Report, error) {
 	if len(seen) > MaxPages {
 		return rep, fmt.Errorf("%d pages is more than one refresh checks (%d)", len(seen), MaxPages)
 	}
+	done := 0
+	tick := func(n int) {
+		done += n
+		if r.Progress != nil {
+			r.Progress(done, len(seen))
+		}
+	}
 	for _, k := range keys {
 		if r.Index.Shard(k) == nil {
 			rep.Skipped += len(byKey[k])
+			tick(len(byKey[k]))
 			continue
 		}
-		if err := r.refreshShard(ctx, k, byKey[k], &rep); err != nil {
+		if err := r.refreshShard(ctx, k, byKey[k], &rep, tick); err != nil {
 			return rep, err
 		}
 	}
@@ -130,7 +141,7 @@ func (r *Refresher) Guide(ctx context.Context, k index.Key, guidePath string) (R
 	return rep, nil
 }
 
-func (r *Refresher) refreshShard(ctx context.Context, k index.Key, urls []string, rep *Report) error {
+func (r *Refresher) refreshShard(ctx context.Context, k index.Key, urls []string, rep *Report, tick func(int)) error {
 	s, _ := site.ByCode(k.Site)
 	rules, err := r.rules(ctx, s)
 	if err != nil {
@@ -144,6 +155,8 @@ func (r *Refresher) refreshShard(ctx context.Context, k index.Key, urls []string
 	var work []fetched
 	err = r.Index.With(k, func(sh *index.Shard) error {
 		for _, u := range urls {
+			// Each page counts once it's checked, or skipped.
+			tick(1)
 			info, ok, err := sh.PageInfo(ctx, u)
 			if err != nil {
 				return err

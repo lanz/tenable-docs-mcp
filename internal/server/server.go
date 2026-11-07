@@ -49,17 +49,17 @@ type Options struct {
 	Hosted bool
 }
 
-// New returns the MCP server with every tool registered.
+// New returns the MCP server with every tool, resource, and prompt registered.
 func New(opts Options) *mcp.Server {
-	s := mcp.NewServer(
-		&mcp.Implementation{Name: Name, Title: "Tenable Docs MCP", Version: version.Get(), WebsiteURL: ProjectURL},
-		&mcp.ServerOptions{Instructions: instructions},
-	)
 	env := tools.NewEnv(tools.Info{Name: Name, Version: version.Get()}, opts.Index)
 	env.Live = opts.Live
 	if !opts.Hosted {
 		env.GapsFile, env.AllowRefresh, env.Feedback = opts.GapsFile, true, opts.Feedback
 	}
+	s := mcp.NewServer(
+		&mcp.Implementation{Name: Name, Title: "Tenable Docs MCP", Version: version.Get(), WebsiteURL: ProjectURL},
+		&mcp.ServerOptions{Instructions: instructions, CompletionHandler: env.Complete},
+	)
 	tools.Register(s, env)
 	return s
 }
