@@ -42,6 +42,7 @@ func Register(s *mcp.Server, env *Env) {
 	registerSearch(s, env)
 	registerRead(s, env)
 	registerBrowse(s, env)
+	registerSpecific(s, env)
 }
 
 var closedWorld = false

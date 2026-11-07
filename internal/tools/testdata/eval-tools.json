@@ -1,0 +1,21 @@
+[
+  {"tool": "find_setting", "args": {"query": "max simultaneous hosts per scan in Nessus"}, "expect": ["nessus/Content/AdvancedScanSettings.htm"]},
+  {"tool": "find_setting", "args": {"query": "max_hosts", "product": "Nessus"}, "expect": ["nessus/Content/SettingsAdvanced.htm"]},
+  {"tool": "find_setting", "args": {"query": "Tenable.sc session timeout"}, "expect": ["security-center/Content/*.htm"]},
+  {"tool": "find_setting", "args": {"query": "agent scan randomization"}, "expect": ["agent/Content/*.htm", "nessus/Content/*.htm", "vulnerability-management/Content/*/*/*.htm"]},
+  {"tool": "required_role", "args": {"task": "create a scan in Tenable.sc"}, "expect": ["security-center/Content/*.htm"]},
+  {"tool": "required_role", "args": {"task": "generate API keys", "product": "Tenable.io"}, "expect": ["vulnerability-management/Content/Settings/my-account/GenerateAPIKey.htm", "vulnerability-management/Content/Settings/*/*.htm"]},
+  {"tool": "required_role", "args": {"task": "link an agent to Nessus Manager"}, "expect": ["nessus/Content/*.htm", "agent/Content/*.htm"]},
+  {"tool": "requirements", "args": {"query": "Nessus ports"}, "expect": ["nessus/Content/PortRequirements.htm"]},
+  {"tool": "requirements", "args": {"product": "Security Center", "kind": "hardware"}, "expect": ["security-center/Content/HardwareRequirements.htm"]},
+  {"tool": "requirements", "args": {"query": "Tenable Agent supported operating systems"}, "expect": ["agent/Content/*.htm", "general-requirements/Content/*.htm"]},
+  {"tool": "requirements", "args": {"query": "Security Center 6.5 hardware"}, "expect": ["security-center/6_5/Content/HardwareRequirements.htm"]},
+  {"tool": "requirements", "args": {"query": "OT Security ports"}, "expect": ["OT-security/Content/*/*.htm", "OT-security/Content/*.htm"]},
+  {"tool": "release_notes", "args": {"product": "Nessus"}, "expect": ["release-notes/Content/nessus/2026.htm"]},
+  {"tool": "release_notes", "args": {"product": "Tenable.sc", "since": "2026-01"}, "expect": ["release-notes/Content/security-center/2026.htm"]},
+  {"tool": "release_notes", "args": {"product": "Identity Exposure", "version": "3.93"}, "expect": ["release-notes/Content/identity-exposure/*/*.htm"]},
+  {"tool": "release_notes", "args": {"product": "Nessus", "version": "10.9"}, "expect": ["release-notes/Content/nessus/*.htm"]},
+  {"tool": "define_term", "args": {"term": "VPR"}, "expect": ["glossary/Content/glossary.htm"]},
+  {"tool": "define_term", "args": {"term": "plugin"}, "expect": ["glossary/Content/glossary.htm"]},
+  {"tool": "define_term", "args": {"term": "agent"}, "expect": ["glossary/Content/glossary.htm"]}
+]

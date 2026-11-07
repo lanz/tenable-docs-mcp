@@ -63,7 +63,7 @@ func TestToolsAreReadOnlyAndClosedWorld(t *testing.T) {
 			t.Errorf("%s: every tool needs an output schema", tool.Name)
 		}
 	}
-	if got, want := strings.Join(names, " "), "browse_guide index_status list_products outline read_doc related_pages search_docs"; got != want {
+	if got, want := strings.Join(names, " "), "browse_guide define_term find_setting index_status list_products outline read_doc related_pages release_notes required_role requirements search_docs"; got != want {
 		t.Errorf("tools = %s, want %s", got, want)
 	}
 }

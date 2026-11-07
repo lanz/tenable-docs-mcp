@@ -33,6 +33,7 @@ func TestParse(t *testing.T) {
 	} {
 		got := Parse(q)
 		want.Lang = "en"
+		got.Words = nil // checked in TestNamesGuide
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("Parse(%q) =\n%+v\nwant\n%+v", q, got, want)
 		}
@@ -269,5 +270,27 @@ func TestEditDistance(t *testing.T) {
 	}
 	if got := closest("zzzzzz", vocab); got != "" {
 		t.Errorf("closest = %q", got)
+	}
+}
+
+func TestNamesGuide(t *testing.T) {
+	words := Parse("manage keys in Security Center Director").Words
+	for guide, want := range map[string]bool{
+		"security-center/director":       true,
+		"security-center/director/6_8":   true,
+		"security-center":                false,
+		"tenable-core/security-center":   false, // a product's name, not a guide's
+		"OT-security/enterprise-manager": false,
+		"security-center/6_8":            false,
+	} {
+		if got := namesGuide(words, guide); got != want {
+			t.Errorf("namesGuide(%q) = %v", guide, got)
+		}
+	}
+	if !namesGuide(Parse("OT Security Enterprise Manager API keys").Words, "OT-security/enterprise-manager") {
+		t.Error("enterprise manager")
+	}
+	if namesGuide(nil, "a/b") {
+		t.Error("no words")
 	}
 }

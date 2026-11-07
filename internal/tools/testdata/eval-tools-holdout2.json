@@ -1,0 +1,13 @@
+[
+  {"tool": "find_setting", "args": {"query": "IPMI password in Nessus credentials"}, "expect": ["nessus/Content/PlaintextAuthentication.htm"]},
+  {"tool": "find_setting", "args": {"query": "IPv4 Address field in the software export CSV in Tenable.io"}, "expect": ["vulnerability-management/Content/Explore/export-software-csv-keys.htm"]},
+  {"tool": "find_setting", "args": {"query": "verify SSL certificate for RHEV in Security Center"}, "expect": ["security-center/Content/Miscellaneous.htm"]},
+  {"tool": "find_setting", "args": {"query": "Centrify port in Nessus"}, "expect": ["nessus/Content/Host.htm"]},
+  {"tool": "required_role", "args": {"task": "view my account details in Web App Scanning"}, "expect": ["web-app-scanning/Content/Settings/my-account/ViewAccountDetails.htm"]},
+  {"tool": "required_role", "args": {"task": "filter exports in Tenable.io"}, "expect": ["vulnerability-management/Content/Settings/Exports/FilterExports.htm"]},
+  {"tool": "required_role", "args": {"task": "change environment settings in OT Security"}, "expect": ["OT-security/Content/Settings/EnvironmentConfiguration.htm"]},
+  {"tool": "requirements", "args": {"query": "Tenable Core ports for Network Monitor"}, "expect": ["tenable-core/network-monitor/Content/AccessRequirements.htm"]},
+  {"tool": "requirements", "args": {"query": "which ports does the Tenable Agent use"}, "expect": ["agent/Content/RequirementsDataflow.htm"]},
+  {"tool": "define_term", "args": {"term": "vulnerability scanner"}, "expect": ["glossary/Content/glossary.htm"]},
+  {"tool": "define_term", "args": {"term": "Tenable Network Monitor"}, "expect": ["glossary/Content/glossary.htm"]}
+]

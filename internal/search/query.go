@@ -38,6 +38,8 @@ type Parsed struct {
 	Short []string
 	// Version is the product version the question names ("Security Center 6.3"), if any.
 	Version string
+	// Words are all of the question's words, lowercased, product names included.
+	Words []string
 }
 
 // Filler words dropped from English questions. Words that can matter in the docs
@@ -114,6 +116,9 @@ func ParseLang(question, lang string) Parsed {
 		rest = c.re.ReplaceAllString(rest, c.with)
 	}
 	toks := tokens(rest)
+	for _, t := range toks {
+		p.Words = appendUnique(p.Words, t.low)
+	}
 	inProduct := make([]bool, len(toks))
 	for _, m := range findProducts(toks) {
 		p.Products = appendUnique(p.Products, m.product)

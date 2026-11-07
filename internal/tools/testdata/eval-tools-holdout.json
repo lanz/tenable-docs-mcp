@@ -1,0 +1,16 @@
+[
+  {"tool": "find_setting", "args": {"query": "how long Nessus scans a single host"}, "expect": ["nessus/Content/AdvancedScanSettings.htm"]},
+  {"tool": "find_setting", "args": {"query": "Nessus TCP port scanner"}, "expect": ["nessus/Content/DiscoverySettings.htm"]},
+  {"tool": "find_setting", "args": {"query": "agent scan performance CPU usage", "product": "Nessus"}, "expect": ["nessus/Content/RemoteAgentSettings.htm"]},
+  {"tool": "find_setting", "args": {"query": "start UID for enumerating local users in Nessus"}, "expect": ["nessus/Content/AssessmentSettings.htm"]},
+  {"tool": "required_role", "args": {"task": "regenerate the Security Center server certificate"}, "expect": ["security-center/Content/RegenerateSSLCertificate.htm"]},
+  {"tool": "required_role", "args": {"task": "generate a diagnostics file in Tenable.sc"}, "expect": ["security-center/Content/GenerateDiagnosticsFile.htm"]},
+  {"tool": "required_role", "args": {"task": "update my account in Tenable.io"}, "expect": ["vulnerability-management/Content/Settings/my-account/UpdateYourAccount.htm"]},
+  {"tool": "required_role", "args": {"task": "manage keys in Security Center Director"}, "expect": ["security-center/director/Content/manage-keys.htm"]},
+  {"tool": "requirements", "args": {"query": "hardware for Nessus Manager managing agents"}, "expect": ["agent/Content/NessusManagerPerformance.htm", "nessus/Content/HardwareRequirements.htm"]},
+  {"tool": "requirements", "args": {"query": "Tenable Agent ports"}, "expect": ["agent/Content/RequirementsDataflow.htm"]},
+  {"tool": "release_notes", "args": {"product": "Tenable.asm", "since": "2025-03", "until": "2025-04"}, "expect": ["release-notes/Content/attack-surface-management/2025.htm"]},
+  {"tool": "define_term", "args": {"term": "credentialed scan"}, "expect": ["glossary/Content/glossary.htm"]},
+  {"tool": "define_term", "args": {"term": "NVD"}, "expect": ["glossary/Content/glossary.htm"]},
+  {"tool": "define_term", "args": {"term": "intrusion prevention"}, "expect": ["glossary/Content/glossary.htm"]}
+]
