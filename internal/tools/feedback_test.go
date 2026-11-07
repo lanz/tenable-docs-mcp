@@ -136,7 +136,7 @@ func testForm(t *testing.T, protocol string) {
 		if tc.body == "" && len(*got) != 0 || tc.body != "" && (len(*got) != 1 || (*got)[0] != tc.body) {
 			t.Errorf("%s: sent %v", tc.name, *got)
 		}
-		if tc.status == "sent" && (!strings.Contains(out.Sent, "Page: "+feedbackPage) || out.WrittenBy == "" || !strings.Contains(text, "wrote the comment themselves")) {
+		if tc.status == "sent" && (!strings.Contains(out.Sent, "Page: "+feedbackPage) || out.WrittenBy == "" || !strings.Contains(text, "showed them a feedback form")) {
 			t.Errorf("%s: result = %+v", tc.name, out)
 		}
 		// The form shows the page and answer, starts empty, and requires a comment only
