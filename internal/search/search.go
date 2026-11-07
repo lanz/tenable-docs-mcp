@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/lanz/tenable-docs-mcp/internal/index"
+	"github.com/lanz/tenable-docs-mcp/internal/page"
 )
 
 // Request is a search.
@@ -32,7 +33,10 @@ type Request struct {
 	// Version picks a guide version ("6.3"). Empty means the version the question
 	// names, or the current one. (Engine only, apart from filtering a shard.)
 	Version string
-	Limit   int
+	// Role keeps only pages that state a required role or permission mentioning it
+	// ("Administrator").
+	Role  string
+	Limit int
 }
 
 // Hit is one section in the results.
@@ -52,6 +56,8 @@ type Hit struct {
 	// AlsoIn lists pages with the same title in other products or guides, which may be
 	// what the user means instead.
 	AlsoIn []Alternate
+	// Roles are the page's statements of the roles and permissions it requires.
+	Roles []string
 	// Language is the site code of the hit's site.
 	Language string
 	// EnglishURL is the section on the current English page, for citing a translation or
@@ -154,6 +160,9 @@ func (s *Searcher) searchParsed(ctx context.Context, parsed Parsed, req Request,
 		return nil, err
 	}
 	res.Relaxed = relaxed
+	if req.Role != "" {
+		cands = slices.DeleteFunc(cands, func(c index.Candidate) bool { return !hasRole(c.Roles, req.Role) })
+	}
 	res.Hits = rerank(cands, parsed, filter.Product, limit)
 	if len(res.Hits) > 0 {
 		return res, nil
@@ -445,10 +454,33 @@ func rerank(cands []index.Candidate, p Parsed, productFilter string, limit int) 
 		hits = append(hits, Hit{
 			URL: c.URL, PageURL: c.PageURL, Title: c.Title, Heading: c.Heading, Location: c.Location,
 			Snippet: c.Snippet, Product: c.Product, GuideType: c.GuideType, Guide: c.Guide, Version: c.Version, LastMod: c.LastMod,
-			Score: s.score,
+			Score: s.score, Roles: roleTexts(c.Roles),
 		})
 	}
 	return hits
+}
+
+func roleTexts(reqs []page.Requirement) []string {
+	var out []string
+	for _, r := range reqs {
+		if r.Label != "" {
+			out = append(out, r.Label+": "+r.Text)
+		} else {
+			out = append(out, r.Text)
+		}
+	}
+	return out
+}
+
+// hasRole reports whether a page's role statements mention a role.
+func hasRole(reqs []page.Requirement, role string) bool {
+	role = strings.ToLower(strings.TrimSpace(role))
+	for _, r := range reqs {
+		if strings.Contains(strings.ToLower(r.Label+" "+r.Text), role) {
+			return true
+		}
+	}
+	return false
 }
 
 func noResults(query string, r *Result) string {

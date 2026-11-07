@@ -18,7 +18,7 @@ func connect(t *testing.T) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 	serverT, clientT := mcp.NewInMemoryTransports()
-	ss, err := New().Connect(ctx, serverT, nil)
+	ss, err := New(nil).Connect(ctx, serverT, nil)
 	if err != nil {
 		t.Fatalf("server connect: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestToolsAreReadOnlyAndClosedWorld(t *testing.T) {
 			t.Errorf("%s: every tool needs an output schema", tool.Name)
 		}
 	}
-	if got, want := strings.Join(names, " "), "index_status"; got != want {
+	if got, want := strings.Join(names, " "), "browse_guide index_status list_products outline read_doc related_pages search_docs"; got != want {
 		t.Errorf("tools = %s, want %s", got, want)
 	}
 }

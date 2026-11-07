@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"strings"
 	"unicode"
+
+	"github.com/lanz/tenable-docs-mcp/internal/page"
 )
 
 // Filter narrows a search to pages that match every field that's set.
@@ -47,6 +49,8 @@ type Candidate struct {
 	LastMod   string
 	// Requirements is how many requirement rows the page has.
 	Requirements int
+	// Roles are the page's statements of the roles and permissions it requires.
+	Roles []page.Requirement
 }
 
 // Candidates returns up to limit sections matching query (an FTS5 query; see
@@ -105,7 +109,7 @@ func (s *Shard) Candidates(ctx context.Context, query string, f Filter, limit in
 		SELECT s.id, p.id, s.url, p.url, s.title, s.heading, s.level, s.location,
 			`+snippet+`, `+score+` AS score,
 			p.product, p.related, p.guide_type, p.guide, p.version, p.lastmod,
-			(SELECT count(*) FROM requirements r WHERE r.page_id = p.id)
+			(SELECT count(*) FROM requirements r WHERE r.page_id = p.id), p.roles
 		`+from+`
 		WHERE `+strings.Join(where, " AND ")+`
 		ORDER BY score, s.id LIMIT ?`, args...)
@@ -116,12 +120,13 @@ func (s *Shard) Candidates(ctx context.Context, query string, f Filter, limit in
 	var out []Candidate
 	for rows.Next() {
 		var c Candidate
-		var related string
+		var related, roles string
 		if err := rows.Scan(&c.SectionID, &c.PageID, &c.URL, &c.PageURL, &c.Title, &c.Heading, &c.Level, &c.Location,
-			&c.Snippet, &c.Score, &c.Product, &related, &c.GuideType, &c.Guide, &c.Version, &c.LastMod, &c.Requirements); err != nil {
+			&c.Snippet, &c.Score, &c.Product, &related, &c.GuideType, &c.Guide, &c.Version, &c.LastMod, &c.Requirements, &roles); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(related), &c.Related)
+		_ = json.Unmarshal([]byte(roles), &c.Roles)
 		out = append(out, c)
 	}
 	return out, rows.Err()

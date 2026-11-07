@@ -37,7 +37,7 @@ func TestCheckLoopback(t *testing.T) {
 }
 
 func TestHTTPServesMCP(t *testing.T) {
-	ts := httptest.NewServer(HTTPHandler(New()))
+	ts := httptest.NewServer(HTTPHandler(New(nil)))
 	defer ts.Close()
 	ctx := context.Background()
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil).
@@ -53,7 +53,7 @@ func TestHTTPServesMCP(t *testing.T) {
 }
 
 func TestHTTPRefusesCrossOriginBrowserRequests(t *testing.T) {
-	ts := httptest.NewServer(HTTPHandler(New()))
+	ts := httptest.NewServer(HTTPHandler(New(nil)))
 	defer ts.Close()
 	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"x","version":"0"}}}`
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(body))
@@ -72,7 +72,7 @@ func TestHTTPRefusesCrossOriginBrowserRequests(t *testing.T) {
 }
 
 func TestHTTPRefusesForeignHost(t *testing.T) {
-	ts := httptest.NewServer(HTTPHandler(New()))
+	ts := httptest.NewServer(HTTPHandler(New(nil)))
 	defer ts.Close()
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(`{}`))
 	req.Host = "attacker.example" // DNS rebinding: the request reaches localhost under another name
@@ -90,7 +90,7 @@ func TestHTTPRefusesForeignHost(t *testing.T) {
 
 func TestHealthz(t *testing.T) {
 	rec := httptest.NewRecorder()
-	HTTPHandler(New()).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	HTTPHandler(New(nil)).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "ok" {
 		t.Errorf("healthz = %d %q", rec.Code, rec.Body.String())
 	}
