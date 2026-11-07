@@ -263,3 +263,40 @@ func TestNonEnglishSettingsNote(t *testing.T) {
 		t.Errorf("notes = %q", out.Notes)
 	}
 }
+
+// Tenable Core guides, one for each product the appliance runs.
+var coreFixture = append([]fixturePage{
+	{enCur, "tenable-core/network-monitor/Content/Access.htm", []string{"Tenable Core", "Network Monitor"}, `<h1>Access Requirements</h1>
+		<table><thead><tr><th>Port</th><th>Traffic</th></tr></thead><tbody><tr><td>TCP 8000</td><td>Network Monitor web interface</td></tr></tbody></table>`},
+	{enCur, "tenable-core/Nessus/Content/Access.htm", []string{"Tenable Core", "Nessus"}, `<h1>Access Requirements</h1>
+		<table><thead><tr><th>Port</th><th>Traffic</th></tr></thead><tbody><tr><td>TCP 8834</td><td>Nessus web interface</td></tr></tbody></table>`},
+}, specificFixture...)
+
+func TestTenableCoreWithAProduct(t *testing.T) {
+	cs := connect(t, buildIndexFrom(t, coreFixture))
+	var out requirementsResultOut
+	call(t, cs, "requirements", map[string]any{"query": "Tenable Core ports for Network Monitor"}, &out)
+	if out.Product != "Tenable Core" || out.For != "Network Monitor" || len(out.Requirements) != 1 ||
+		!strings.Contains(out.Requirements[0].URL, "tenable-core/network-monitor/") {
+		t.Errorf("core for NNM = %+v", out)
+	}
+	call(t, cs, "requirements", map[string]any{"product": "Tenable Core", "query": "ports for Nessus"}, &out)
+	if out.For != "Nessus" || len(out.Requirements) != 1 || !strings.Contains(out.Requirements[0].URL, "tenable-core/Nessus/") {
+		t.Errorf("core filter for Nessus = %+v", out)
+	}
+	call(t, cs, "requirements", map[string]any{"query": "Tenable Core ports"}, &out)
+	if out.For != "" || len(out.Requirements) != 2 {
+		t.Errorf("all of Tenable Core = %+v", out)
+	}
+	// No Tenable Core rows for the product: all of Tenable Core.
+	call(t, cs, "requirements", map[string]any{"query": "Tenable Core ports for Security Center"}, &out)
+	if out.For != "" || len(out.Requirements) != 2 {
+		t.Errorf("fallback = %+v", out)
+	}
+	// search_docs puts the Tenable Core page for the product first.
+	var sr searchOut
+	call(t, cs, "search_docs", map[string]any{"query": "Tenable Core access requirements for Network Monitor"}, &sr)
+	if len(sr.Results) == 0 || !strings.Contains(sr.Results[0].URL, "tenable-core/network-monitor/") {
+		t.Errorf("search = %+v", sr.Results)
+	}
+}

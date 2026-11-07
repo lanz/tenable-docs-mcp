@@ -83,6 +83,10 @@ func pageFilter(f Filter) (string, []any) {
 		b.WriteString(" AND p.version = ?")
 		args = append(args, f.Version)
 	}
+	if f.Related != "" {
+		b.WriteString(" AND EXISTS (SELECT 1 FROM json_each(p.related) WHERE value = ?)")
+		args = append(args, f.Related)
+	}
 	return b.String(), args
 }
 

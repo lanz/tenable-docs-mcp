@@ -290,6 +290,8 @@ const (
 	penaltyOlderYear    = 0.8
 	penaltyMissingWord  = 0.6 // sections missing one of the question's words
 	boostGuide          = 1.6 // the question names the page's guide (Director, Enterprise Manager)
+	boostCoreProduct    = 1.4 // Tenable Core pages for the product the question names with it
+	penaltyCoreOther    = 0.7 // … and Tenable Core pages for other products
 	widenBelow          = 30
 	maxPerPage          = 2
 )
@@ -310,6 +312,19 @@ var (
 	parenthetical = regexp.MustCompile(`\([^)]*\)`)
 	yearRe        = regexp.MustCompile(`\b(19|20)\d\d\b`)
 )
+
+// CoreProduct returns the product a question names along with Tenable Core, which runs
+// several products as an appliance: Network Monitor in "Tenable Core ports for Network
+// Monitor". It returns "" unless the products are Tenable Core and exactly one other.
+func CoreProduct(products []string) string {
+	if len(products) != 2 || !slices.Contains(products, "Tenable Core") {
+		return ""
+	}
+	if products[0] == "Tenable Core" {
+		return products[1]
+	}
+	return products[0]
+}
 
 // namesGuide reports whether a question names a page's guide below its product: every
 // word of one of the guide path's later segments ("director" in
@@ -436,6 +451,15 @@ func rerank(cands []index.Candidate, p Parsed, productFilter string, limit int) 
 				score *= boostProduct
 			case slices.ContainsFunc(c.Related, func(r string) bool { return slices.Contains(p.Products, r) }):
 				score *= boostRelatedProduct
+			}
+		}
+		// Tenable Core and the product it runs ("Tenable Core ports for Network Monitor"):
+		// the Tenable Core pages for that product.
+		if other := CoreProduct(p.Products); other != "" && c.Product == "Tenable Core" {
+			if slices.Contains(c.Related, other) {
+				score *= boostCoreProduct
+			} else {
+				score *= penaltyCoreOther
 			}
 		}
 		isRelease := c.GuideType == "Release Notes" || strings.HasPrefix(c.Guide, "release-notes")

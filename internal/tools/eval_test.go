@@ -42,8 +42,9 @@ func TestEvalTools(t *testing.T) {
 	cs := connect(t, ix)
 	// eval-tools is the set the tools were tuned on. eval-tools-holdout was written from
 	// randomly chosen pages; its first run found three gaps, which were fixed, so it's
-	// tuned on now too. eval-tools-holdout2 was written afterward from new random pages
-	// and not tuned on.
+	// tuned on now too. eval-tools-holdout2 was written afterward from new random pages;
+	// its one miss (Tenable Core with the product it runs) led to a fix, so it's tuned on
+	// as well. New questions belong in a fresh held-out set.
 	for _, set := range []string{"eval-tools", "eval-tools-holdout", "eval-tools-holdout2"} {
 		t.Run(set, func(t *testing.T) { evalToolSet(t, cs, set) })
 	}

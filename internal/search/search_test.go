@@ -294,3 +294,23 @@ func TestNamesGuide(t *testing.T) {
 		t.Error("no words")
 	}
 }
+
+func TestCoreProduct(t *testing.T) {
+	for _, c := range []struct {
+		products []string
+		want     string
+	}{
+		{[]string{"Tenable Core", "Network Monitor"}, "Network Monitor"},
+		{[]string{"Nessus", "Tenable Core"}, "Nessus"},
+		{[]string{"Tenable Core"}, ""},
+		{[]string{"Nessus", "Network Monitor"}, ""},
+		{[]string{"Tenable Core", "Nessus", "Network Monitor"}, ""},
+	} {
+		if got := CoreProduct(c.products); got != c.want {
+			t.Errorf("CoreProduct(%q) = %q", c.products, got)
+		}
+	}
+	if got := CoreProduct(Parse("Tenable Core ports for Network Monitor").Products); got != "Network Monitor" {
+		t.Errorf("parsed = %q", got)
+	}
+}

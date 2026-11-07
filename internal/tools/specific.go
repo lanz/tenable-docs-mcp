@@ -35,15 +35,33 @@ func resolveProduct(name string) (string, error) {
 }
 
 // productFor is the product a tool should filter on: the one given, or the only one
-// the question names.
-func productFor(given string, parsed search.Parsed) (string, error) {
+// the question names. For Tenable Core with one other product ("Tenable Core ports for
+// Network Monitor"), it's Tenable Core, with the other product as related: the Tenable
+// Core pages for that product.
+func productFor(given string, parsed search.Parsed) (product, related string, err error) {
 	if given != "" {
-		return resolveProduct(given)
+		if product, err = resolveProduct(given); err != nil {
+			return "", "", err
+		}
+		if product == "Tenable Core" {
+			for _, p := range parsed.Products {
+				if p != "Tenable Core" {
+					if related != "" {
+						return product, "", nil // several: no one of them
+					}
+					related = p
+				}
+			}
+		}
+		return product, related, nil
+	}
+	if other := search.CoreProduct(parsed.Products); other != "" {
+		return "Tenable Core", other, nil
 	}
 	if len(parsed.Products) == 1 {
-		return parsed.Products[0], nil
+		return parsed.Products[0], "", nil
 	}
-	return "", nil
+	return "", "", nil
 }
 
 // onShard runs fn on the shard for a language's current or older versions, reporting
@@ -129,6 +147,7 @@ type settingOut struct {
 type settingsOut struct {
 	Settings []settingOut `json:"settings"`
 	Product  string       `json:"product,omitempty" jsonschema:"the product filter applied"`
+	For      string       `json:"for_product,omitempty" jsonschema:"for Tenable Core, the product it runs that the filter applied"`
 	Notes    []string     `json:"notes,omitempty"`
 	Message  string       `json:"message,omitempty"`
 }
@@ -191,6 +210,7 @@ type requirementOut struct {
 type requirementsResultOut struct {
 	Requirements []requirementOut `json:"requirements"`
 	Product      string           `json:"product,omitempty"`
+	For          string           `json:"for_product,omitempty" jsonschema:"for Tenable Core, the product it runs that the filter applied"`
 	Kind         string           `json:"kind,omitempty"`
 	Notes        []string         `json:"notes,omitempty"`
 	Message      string           `json:"message,omitempty"`
@@ -295,17 +315,17 @@ func registerSpecific(s *mcp.Server, env *Env) {
 		if len(parsed.Terms) == 0 {
 			return nil, settingsOut{}, fmt.Errorf("query has no words to look for: give a setting's name or what it does")
 		}
-		product, err := productFor(in.Product, parsed)
+		product, related, err := productFor(in.Product, parsed)
 		if err != nil {
 			return nil, settingsOut{}, err
 		}
 		limit := clamp(in.Limit, 5, 20)
 		version := firstNonEmpty(in.Version, parsed.Version)
-		out := settingsOut{Settings: []settingOut{}, Product: product}
-		find := func(product string) error {
+		out := settingsOut{Settings: []settingOut{}, Product: product, For: related}
+		find := func(product, related string) error {
 			out.Settings = out.Settings[:0]
 			note, err := env.versioned("en", version, func(sh *index.Shard, v string) (int, error) {
-				f := index.Filter{Product: product, Version: v}
+				f := index.Filter{Product: product, Related: related, Version: v}
 				rows, err := sh.Settings(ctx, index.MatchQuery(strings.Join(parsed.Terms, " ")), f, limit*3)
 				if err == nil && len(rows) == 0 && len(parsed.Terms) > 1 {
 					// Not every word: settings that match most of them.
@@ -330,12 +350,19 @@ func registerSpecific(s *mcp.Server, env *Env) {
 			}
 			return err
 		}
-		if err := find(product); err != nil {
+		if err := find(product, related); err != nil {
 			return nil, settingsOut{}, err
+		}
+		if len(out.Settings) == 0 && related != "" {
+			// No Tenable Core setting for that product: any Tenable Core setting.
+			if err := find(product, ""); err != nil {
+				return nil, settingsOut{}, err
+			}
+			out.For = ""
 		}
 		if len(out.Settings) == 0 && product != "" && in.Product == "" {
 			// The product came from the question; try without it.
-			if err := find(""); err != nil {
+			if err := find("", ""); err != nil {
 				return nil, settingsOut{}, err
 			}
 			if len(out.Settings) > 0 {
@@ -383,7 +410,7 @@ func registerSpecific(s *mcp.Server, env *Env) {
 		if strings.TrimSpace(in.Task) == "" {
 			return nil, rolesOut{}, fmt.Errorf("task is empty: describe what the user wants to do")
 		}
-		product, err := productFor(in.Product, search.Parse(in.Task))
+		product, _, err := productFor(in.Product, search.Parse(in.Task))
 		if err != nil {
 			return nil, rolesOut{}, err
 		}
@@ -443,7 +470,7 @@ func registerSpecific(s *mcp.Server, env *Env) {
 			return nil, requirementsResultOut{}, err
 		}
 		parsed := search.Parse(in.Query)
-		product, err := productFor(in.Product, parsed)
+		product, related, err := productFor(in.Product, parsed)
 		if err != nil {
 			return nil, requirementsResultOut{}, err
 		}
@@ -470,12 +497,18 @@ func registerSpecific(s *mcp.Server, env *Env) {
 		}
 		limit := clamp(in.Limit, 30, 100)
 		version := firstNonEmpty(in.Version, parsed.Version)
-		out := requirementsResultOut{Requirements: []requirementOut{}, Product: product, Kind: kind}
+		out := requirementsResultOut{Requirements: []requirementOut{}, Product: product, For: related, Kind: kind}
 		note, err := env.versioned("en", version, func(sh *index.Shard, v string) (int, error) {
-			rows, err := sh.Requirements(ctx, index.RequirementQuery{Filter: index.Filter{Product: product, Version: v}, Kind: kind, Words: words, Limit: 500})
+			f := index.Filter{Product: product, Related: related, Version: v}
+			rows, err := sh.Requirements(ctx, index.RequirementQuery{Filter: f, Kind: kind, Words: words, Limit: 500})
 			if err == nil && len(rows) == 0 && len(words) > 0 && (product != "" || kind != "") {
 				// The words narrow the rows only when some rows have them.
-				rows, err = sh.Requirements(ctx, index.RequirementQuery{Filter: index.Filter{Product: product, Version: v}, Kind: kind, Limit: 500})
+				rows, err = sh.Requirements(ctx, index.RequirementQuery{Filter: f, Kind: kind, Limit: 500})
+			}
+			if err == nil && len(rows) == 0 && related != "" {
+				// No Tenable Core rows for that product: any Tenable Core rows.
+				f.Related, out.For = "", ""
+				rows, err = sh.Requirements(ctx, index.RequirementQuery{Filter: f, Kind: kind, Limit: 500})
 			}
 			slices.SortStableFunc(rows, func(a, b index.RequirementRow) int { return pageRank(a, kind) - pageRank(b, kind) })
 			rows = rows[:min(len(rows), limit)]
