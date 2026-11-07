@@ -65,7 +65,7 @@ type gapOut struct {
 	Total    int    `json:"total" jsonschema:"how many questions are recorded"`
 	File     string `json:"file"`
 	// SentToTenable says what happened to the offer to send the gap to Tenable.
-	SentToTenable string `json:"sent_to_tenable,omitempty" jsonschema:"sent, declined, cancelled, or no_form (this client can't show forms, so it wasn't offered); empty when sending isn't available"`
+	SentToTenable string `json:"sent_to_tenable,omitempty" jsonschema:"sent, declined, cancelled, no_form (this client can't show forms, so it wasn't offered), or rate_limited (too many sent recently, so it wasn't offered); empty when sending isn't available"`
 	Sent          string `json:"sent,omitempty" jsonschema:"exactly what was sent, as the user approved it in the form"`
 	WrittenBy     string `json:"written_by,omitempty" jsonschema:"who approved what was sent: always the user, in the form"`
 }
@@ -251,6 +251,12 @@ func registerHonest(s *mcp.Server, env *Env) {
 			out.SentToTenable = "no_form"
 			return summary("%s This client can't show forms, so it wasn't offered to Tenable's documentation team; "+
 				"the user can share the summary instead.", text), out, nil
+		}
+		// Don't offer a form that can't be sent now.
+		if err := env.Feedback.Check(); err != nil {
+			out.SentToTenable = "rate_limited"
+			return summary("%s It wasn't offered to Tenable's documentation team: %v. The user can report it again later, "+
+				"or share the summary.", text, err), out, nil
 		}
 		// Offer to send it; the SDK calls this tool again with the user's answer.
 		page := env.gapPage(ctx, in.URL, product)

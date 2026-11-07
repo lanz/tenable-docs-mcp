@@ -137,13 +137,23 @@ func TestGapPage(t *testing.T) {
 }
 
 func TestGapAndFeedbackShareLimits(t *testing.T) {
-	env, got, _ := gapEnv(t)
+	env, got, now := gapEnv(t)
+	forms := 0
 	cs := connectEliciting(t, env, "", func(*mcp.ElicitRequest) *mcp.ElicitResult {
+		forms++
 		return &mcp.ElicitResult{Action: "accept", Content: map[string]any{"comment": "Clear.", "question": "Why?"}}
 	})
 	call(t, cs, "open_feedback_form", map[string]any{"url": feedbackPage, "helpful": true}, nil)
-	text, isErr := callRaw(t, cs, "report_gap", map[string]any{"question": "Why?"}, nil)
-	if !isErr || !strings.Contains(text, "rate limited") || len(*got) != 1 || len(recorded(t, env)) != 1 {
-		t.Errorf("%q, %d sent", text, len(*got))
+	// Over the limit, the gap is recorded, but no form is shown.
+	var out gapOut
+	text := call(t, cs, "report_gap", map[string]any{"question": "Why?"}, &out)
+	if out.SentToTenable != "rate_limited" || !out.Recorded || !strings.Contains(text, "rate limited") || forms != 1 || len(*got) != 1 ||
+		len(recorded(t, env)) != 1 {
+		t.Errorf("%q, %+v, %d forms, %d sent", text, out, forms, len(*got))
+	}
+	*now = now.Add(2 * time.Minute)
+	call(t, cs, "report_gap", map[string]any{"question": "Why?"}, &out)
+	if out.SentToTenable != "sent" || len(*got) != 2 {
+		t.Errorf("a minute later = %+v, %d sent", out, len(*got))
 	}
 }

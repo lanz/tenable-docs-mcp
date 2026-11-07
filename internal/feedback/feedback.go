@@ -215,6 +215,26 @@ type sent struct {
 	payload
 }
 
+// Check reports whether sending now would pass a rate limit, so callers can say so before
+// asking the user to fill in a form. It returns an error wrapping ErrRateLimited, or nil.
+func (s *Sender) Check() error {
+	if s.LogFile == "" {
+		return errors.New("the feedback sender isn't set up")
+	}
+	now := time.Now
+	if s.Now != nil {
+		now = s.Now
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if wait, err := s.check(now().UTC()); err != nil {
+		return err
+	} else if wait != "" {
+		return fmt.Errorf("%w: %s", ErrRateLimited, wait)
+	}
+	return nil
+}
+
 // Send sends prepared feedback, and records it.
 func (s *Sender) Send(ctx context.Context, p *Prepared) error {
 	if s.Endpoint == "" || s.LogFile == "" {

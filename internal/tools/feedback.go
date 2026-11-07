@@ -33,7 +33,7 @@ type feedbackIn struct {
 }
 
 type feedbackOut struct {
-	Status string `json:"status" jsonschema:"sent, declined, cancelled, or no_form (this client can't show the feedback form; nothing was sent)"`
+	Status string `json:"status" jsonschema:"sent, declined, cancelled, no_form (this client can't show the feedback form), or rate_limited (too many sent recently); nothing is sent unless sent"`
 	// Sent is exactly what was sent, when it was.
 	Sent string `json:"sent,omitempty" jsonschema:"exactly what was sent: the user's own feedback, as they wrote it in the form"`
 	// WrittenBy says who wrote the comment, since the agent doesn't see the form.
@@ -115,6 +115,12 @@ func registerFeedback(s *mcp.Server, env *Env) {
 		case req.Params.InputResponses != nil:
 			return env.sendForm(ctx, req, in, out, now)
 		case canElicit(req):
+			// Don't ask the user to write feedback that can't be sent now.
+			if err := env.Feedback.Check(); err != nil {
+				out.Status = "rate_limited"
+				return summary("Nothing was sent, and no form was shown: %v. The user can use the feedback form at the "+
+					"bottom of the page instead: %s", err, u), out, nil
+			}
 			// Show the form; the SDK calls this tool again with what the user entered.
 			return &mcp.CallToolResult{
 				InputRequests: mcp.InputRequestMap{formID: feedbackForm(u, in.Helpful, env.Info.Version)},

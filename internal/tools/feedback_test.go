@@ -152,13 +152,17 @@ func testForm(t *testing.T, protocol string) {
 
 func TestSendFeedbackRateLimit(t *testing.T) {
 	env, got, now := feedbackEnv(t)
+	forms := 0
 	cs := connectEliciting(t, env, "", func(*mcp.ElicitRequest) *mcp.ElicitResult {
+		forms++
 		return &mcp.ElicitResult{Action: "accept", Content: map[string]any{"comment": "Clear."}}
 	})
 	args := map[string]any{"url": feedbackPage, "helpful": true}
 	call(t, cs, "open_feedback_form", args, nil)
-	if text, isErr := callRaw(t, cs, "open_feedback_form", args, nil); !isErr || !strings.Contains(text, "rate limited") || len(*got) != 1 {
-		t.Errorf("within a minute = %q", text)
+	// Within the minute, the user isn't asked to fill in a form that can't be sent.
+	var out feedbackOut
+	if text := call(t, cs, "open_feedback_form", args, &out); out.Status != "rate_limited" || !strings.Contains(text, "rate limited") || forms != 1 || len(*got) != 1 {
+		t.Errorf("within a minute = %q, %+v, %d forms", text, out, forms)
 	}
 	*now = now.Add(2 * time.Minute)
 	call(t, cs, "open_feedback_form", args, nil)

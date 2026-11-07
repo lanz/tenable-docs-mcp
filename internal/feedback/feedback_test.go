@@ -231,3 +231,26 @@ func TestDefaultLogFile(t *testing.T) {
 		t.Errorf("path = %s", p)
 	}
 }
+
+func TestCheck(t *testing.T) {
+	f := newFake(t)
+	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	s := &Sender{Endpoint: f.URL, LogFile: filepath.Join(t.TempDir(), "f.jsonl"), Now: func() time.Time { return now }}
+	if err := s.Check(); err != nil {
+		t.Fatalf("before sending = %v", err)
+	}
+	p, _ := Prepare(Feedback{URL: page, Helpful: true}, "test")
+	if err := s.Send(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Check(); !errors.Is(err, ErrRateLimited) || len(f.bodies) != 1 {
+		t.Errorf("within a minute = %v", err)
+	}
+	now = now.Add(2 * time.Minute)
+	if err := s.Check(); err != nil {
+		t.Errorf("a minute later = %v", err)
+	}
+	if err := (&Sender{}).Check(); err == nil {
+		t.Error("an unset sender should fail")
+	}
+}
