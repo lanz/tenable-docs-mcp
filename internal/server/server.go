@@ -8,6 +8,7 @@ package server
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lanz/tenable-docs-mcp/internal/feedback"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
 	"github.com/lanz/tenable-docs-mcp/internal/site"
 	"github.com/lanz/tenable-docs-mcp/internal/tools"
@@ -29,7 +30,8 @@ Start with search_docs, passing the user's question in their words and language;
 before answering, and cite the url it returns. For a translation or an older version, english_url is the current
 English page. State the product and version an answer is for, and any required role the docs give. Before sending an
 answer with docs links, check them with verify_citations. When the docs don't answer a question, say so, and offer to
-record it with report_gap. index_status shows what the documentation index holds.`
+record it with report_gap. When the user asks to give Tenable feedback on a page, open_feedback_form shows them the
+docs feedback form; the feedback is theirs, and they write it. index_status shows what the documentation index holds.`
 
 // Options configure the server.
 type Options struct {
@@ -40,7 +42,10 @@ type Options struct {
 	Live site.Source
 	// GapsFile is where report_gap records questions; empty turns it off.
 	GapsFile string
-	// Hosted turns off what a shared server mustn't do: refresh_index and report_gap.
+	// Feedback sends open_feedback_form's feedback; nil turns it off.
+	Feedback *feedback.Sender
+	// Hosted turns off what a shared server mustn't do: refresh_index, report_gap, and
+	// open_feedback_form.
 	Hosted bool
 }
 
@@ -53,7 +58,7 @@ func New(opts Options) *mcp.Server {
 	env := tools.NewEnv(tools.Info{Name: Name, Version: version.Get()}, opts.Index)
 	env.Live = opts.Live
 	if !opts.Hosted {
-		env.GapsFile, env.AllowRefresh = opts.GapsFile, true
+		env.GapsFile, env.AllowRefresh, env.Feedback = opts.GapsFile, true, opts.Feedback
 	}
 	tools.Register(s, env)
 	return s

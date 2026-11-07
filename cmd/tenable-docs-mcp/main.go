@@ -34,6 +34,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lanz/tenable-docs-mcp/internal/feedback"
 	"github.com/lanz/tenable-docs-mcp/internal/gaps"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
 	"github.com/lanz/tenable-docs-mcp/internal/server"
@@ -117,7 +118,13 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintln(stderr, server.Name+": no settings folder for recording gaps:", err)
 	}
-	srv := server.New(server.Options{Index: ix, Live: site.NewHTTP(site.HTTPConfig{UserAgent: server.UserAgent()}), GapsFile: gapsFile})
+	var sender *feedback.Sender
+	if logFile, err := feedback.DefaultLogFile(); err != nil {
+		fmt.Fprintln(stderr, server.Name+": no settings folder for the feedback log, so open_feedback_form is off:", err)
+	} else {
+		sender = &feedback.Sender{Endpoint: feedback.Endpoint, UserAgent: server.UserAgent(), LogFile: logFile}
+	}
+	srv := server.New(server.Options{Index: ix, Live: site.NewHTTP(site.HTTPConfig{UserAgent: server.UserAgent()}), GapsFile: gapsFile, Feedback: sender})
 	if *httpAddr == "" {
 		if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) {
 			fmt.Fprintln(stderr, server.Name+":", err)
