@@ -6,6 +6,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -145,8 +146,32 @@ func testElicitation(t *testing.T, protocol string) {
 		if out.Status != tc.status || out.Token != "" || len(*got) != tc.sent {
 			t.Errorf("%+v: out = %+v, %d sent", tc.answer, out, len(*got))
 		}
-		if !strings.Contains(asked, "Email: a@example.com") || !strings.Contains(asked, "documentation only") {
+		if !strings.Contains(asked, "Email: a@example.com") || !strings.Contains(asked, "documentation only") || strings.Contains(asked, "add your email") {
 			t.Errorf("the user was asked:\n%s", asked)
+		}
+	}
+
+	// Without an email, the prompt offers one; what the user types is sent, and an
+	// invalid one sends nothing.
+	for _, tc := range []struct {
+		email any
+		sent  bool
+	}{{"b@example.com", true}, {"", true}, {"not an email", false}} {
+		env, got, _ := feedbackEnv(t)
+		var schema any
+		cs := connectEliciting(t, env, protocol, func(r *mcp.ElicitRequest) *mcp.ElicitResult {
+			schema = r.Params.RequestedSchema
+			return &mcp.ElicitResult{Action: "accept", Content: map[string]any{"email": tc.email}}
+		})
+		text, isErr := callRaw(t, cs, "send_feedback", map[string]any{"url": feedbackPage, "helpful": true}, nil)
+		if isErr == tc.sent || len(*got) != map[bool]int{true: 1, false: 0}[tc.sent] {
+			t.Errorf("email %q: %q, %d sent", tc.email, text, len(*got))
+		}
+		if e := tc.email.(string); tc.sent && e != "" && !strings.Contains((*got)[0], `"email":"`+e+`"`) {
+			t.Errorf("email %q: sent %s", e, (*got)[0])
+		}
+		if s, _ := json.Marshal(schema); !strings.Contains(string(s), `"email"`) || strings.Contains(string(s), "required") {
+			t.Errorf("schema = %s", s)
 		}
 	}
 }

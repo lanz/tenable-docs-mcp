@@ -13,6 +13,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -93,7 +94,9 @@ func registerFeedback(s *mcp.Server, env *Env) {
 			"feedback, with the comment in their words; feedback is for the documentation, not for Tenable " +
 			"products. The user always sees exactly what will be sent first: either their client asks them, or " +
 			"this tool returns a preview and a confirm_token, and nothing is sent until you call it again with " +
-			"the token after the user approves. Never approve for them. Leave out customer details and secrets.",
+			"the token after the user approves. Never approve for them. An email is optional, for the docs team " +
+			"to reply: include one only if the user gives it, and when there's no prompt from their client, " +
+			"ask whether they want to. Never fill it in from elsewhere. Leave out customer details and secrets.",
 		Annotations: &mcp.ToolAnnotations{Title: "Send docs feedback", DestructiveHint: &notDestructive, OpenWorldHint: &open},
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in feedbackIn) (*mcp.CallToolResult, feedbackOut, error) {
 		if env.Feedback == nil {
@@ -129,14 +132,28 @@ func registerFeedback(s *mcp.Server, env *Env) {
 				out.Status = "declined"
 				return summary("The user declined; nothing was sent."), out, nil
 			}
+			// The user may have added an email in the prompt.
+			if email, _ := res.Content["email"].(string); in.Email == "" && strings.TrimSpace(email) != "" {
+				p, err = feedback.Prepare(feedback.Feedback{URL: u, Helpful: in.Helpful, Comment: in.Comment, Email: email}, env.Info.Version)
+				if err != nil {
+					return nil, feedbackOut{}, fmt.Errorf("not sent: %w", err)
+				}
+				out.Preview = p.Preview
+			}
 		case canElicit(req):
 			// Ask the user through the client; the SDK retries this call with the answer.
+			// Accepting is the approval, so the prompt has no required fields: some
+			// clients won't accept until a required checkbox is ticked.
+			msg := "Send this feedback to Tenable's documentation team? Accept to send it.\n\n" + p.Preview
+			props := map[string]any{}
+			if in.Email == "" {
+				msg += "\n\nTo get a reply from the docs team, add your email. It's optional."
+				props["email"] = map[string]any{"type": "string", "title": "Email (optional)", "description": "For the docs team to reply; leave blank for none"}
+			}
 			return &mcp.CallToolResult{
 				InputRequests: mcp.InputRequestMap{approvalID: &mcp.ElicitParams{
-					Message: "Send this feedback to Tenable's documentation team? Accept to send it.\n\n" + p.Preview,
-					// No fields: accepting is the approval. A checkbox only repeated it,
-					// and some clients won't accept until it's ticked.
-					RequestedSchema: map[string]any{"type": "object", "properties": map[string]any{}},
+					Message:         msg,
+					RequestedSchema: map[string]any{"type": "object", "properties": props},
 				}},
 				RequestState: confirmToken(forApproval, p.Body(), now),
 			}, feedbackOut{}, nil
