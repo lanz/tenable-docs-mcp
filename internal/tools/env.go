@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lanz/tenable-docs-mcp/internal/feedback"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
 	"github.com/lanz/tenable-docs-mcp/internal/page"
 	"github.com/lanz/tenable-docs-mcp/internal/search"
@@ -32,6 +34,10 @@ type Env struct {
 	GapsFile string
 	// AllowRefresh lets refresh_index update the index (off in hosted mode).
 	AllowRefresh bool
+	// Feedback sends send_feedback's feedback; nil turns it off (as in hosted mode).
+	Feedback *feedback.Sender
+	// Now is the clock; nil means time.Now.
+	Now func() time.Time
 }
 
 // NewEnv returns an Env for an index, which may be nil.
@@ -51,6 +57,7 @@ func Register(s *mcp.Server, env *Env) {
 	registerBrowse(s, env)
 	registerSpecific(s, env)
 	registerHonest(s, env)
+	registerFeedback(s, env)
 }
 
 var closedWorld = false
