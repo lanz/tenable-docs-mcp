@@ -23,11 +23,21 @@ type IndexSink struct {
 	builtAt string
 	builds  map[index.Key]*index.Shard
 	batch   map[index.Key][]index.Doc
+	meta    map[index.Key]map[string]string
 }
 
 // NewIndexSink returns a sink that builds shards for ix, marked as built at builtAt.
 func NewIndexSink(ix *index.Index, builtAt string) *IndexSink {
-	return &IndexSink{ix: ix, builtAt: builtAt, builds: map[index.Key]*index.Shard{}, batch: map[index.Key][]index.Doc{}}
+	return &IndexSink{ix: ix, builtAt: builtAt, builds: map[index.Key]*index.Shard{}, batch: map[index.Key][]index.Doc{},
+		meta: map[index.Key]map[string]string{}}
+}
+
+// SetMeta records a metadata value to store in a shard when Finish installs it.
+func (s *IndexSink) SetMeta(k index.Key, key, value string) {
+	if s.meta[k] == nil {
+		s.meta[k] = map[string]string{}
+	}
+	s.meta[k][key] = value
 }
 
 func (s *IndexSink) shard(k index.Key) (*index.Shard, error) {
@@ -102,7 +112,18 @@ func (s *IndexSink) Finish(ctx context.Context) error {
 			return err
 		}
 		b := s.builds[k]
-		if err := b.Update(ctx, func(tx *index.Tx) error { return tx.SetMeta("built_at", s.builtAt) }); err != nil {
+		err := b.Update(ctx, func(tx *index.Tx) error {
+			if err := tx.SetMeta("built_at", s.builtAt); err != nil {
+				return err
+			}
+			for key, value := range s.meta[k] {
+				if err := tx.SetMeta(key, value); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil {
 			return err
 		}
 		if err := b.Optimize(ctx); err != nil {

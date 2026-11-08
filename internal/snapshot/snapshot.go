@@ -223,12 +223,21 @@ func ReadManifest(dir string) (Manifest, error) {
 	if err != nil {
 		return Manifest{}, err
 	}
+	return ParseManifest(data)
+}
+
+// ErrFormat is returned for a manifest in a format this version doesn't read.
+var ErrFormat = errors.New("unsupported snapshot format")
+
+// ParseManifest checks a manifest: its format, and that each shard's site is known
+// and its file is named for its key and checksum.
+func ParseManifest(data []byte) (Manifest, error) {
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
 		return Manifest{}, fmt.Errorf("%s: %w", ManifestFile, err)
 	}
 	if m.Format != Format {
-		return Manifest{}, fmt.Errorf("the snapshot is format %d, and this version of tenable-docs-mcp reads format %d; update it", m.Format, Format)
+		return Manifest{}, fmt.Errorf("%w: the snapshot is format %d, and this version of tenable-docs-mcp reads format %d; update it", ErrFormat, m.Format, Format)
 	}
 	for _, s := range m.Shards {
 		if _, ok := site.ByCode(s.Site); !ok || len(s.SHA256) != 64 || s.Key != s.IndexKey().String() ||
