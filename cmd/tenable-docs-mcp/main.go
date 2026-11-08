@@ -15,6 +15,9 @@
 //	tenable-docs-mcp verify-links [-base URL] [-live] FILE...
 //	                                       check the docs links in answers or draft topics
 //	tenable-docs-mcp gaps export|clear     summarize or clear the questions report_gap recorded
+//	tenable-docs-mcp index build|import|verify
+//	                                       build the index, or a snapshot of it, from local
+//	                                       copies of the sites; import or check a snapshot
 //	tenable-docs-mcp version               print the version
 //
 // Over stdio, stdout carries only protocol messages; diagnostics go to stderr.
@@ -56,6 +59,12 @@ const usage = `Usage:
   tenable-docs-mcp gaps export [-since DATE] [-json]
                                          summarize the questions the docs didn't answer
   tenable-docs-mcp gaps clear -yes       delete the recorded questions
+  tenable-docs-mcp index build -source "en=DIR;jp=DIR" [-sites en,jp] [-out DIR | -index DIR]
+                                         build the index, or a snapshot of it, from local
+                                         copies of the sites
+  tenable-docs-mcp index import [-sites en,jp] [-index DIR] SNAPSHOT
+                                         build the index from a snapshot
+  tenable-docs-mcp index verify SNAPSHOT check a snapshot against its manifest
   tenable-docs-mcp version               print the version
   tenable-docs-mcp help                  show this help
 `
@@ -86,6 +95,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return verifyLinks(ctx, rest, stdin, stdout, stderr)
 	case "gaps":
 		return gapsCmd(rest, stdout, stderr)
+	case "index":
+		return indexCmd(ctx, rest, stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, server.Name, version.Get())
 		return 0

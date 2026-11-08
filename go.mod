@@ -3,6 +3,7 @@ module github.com/lanz/tenable-docs-mcp
 go 1.26.0
 
 require (
+	github.com/klauspost/compress v1.20.3
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	golang.org/x/net v0.62.0

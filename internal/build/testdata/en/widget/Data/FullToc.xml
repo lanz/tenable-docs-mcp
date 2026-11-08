@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CatapultToc Version="1">
+  <TocEntry Title="Welcome to Widget Manager" Link="/Content/Start.htm">
+    <TocEntry Title="Set Up Widgets" Link="/Content/Setup.htm" />
+  </TocEntry>
+</CatapultToc>

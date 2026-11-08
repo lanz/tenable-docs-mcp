@@ -1,0 +1,292 @@
+// Copyright (C) 2026 Lance Duvall
+// Project: <https://github.com/lanz/tenable-docs-mcp>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/lanz/tenable-docs-mcp/internal/build"
+	"github.com/lanz/tenable-docs-mcp/internal/index"
+	"github.com/lanz/tenable-docs-mcp/internal/server"
+	"github.com/lanz/tenable-docs-mcp/internal/site"
+	"github.com/lanz/tenable-docs-mcp/internal/snapshot"
+	"github.com/lanz/tenable-docs-mcp/internal/version"
+)
+
+const indexUsage = `Usage:
+  %[1]s index build -source "en=DIR;jp=DIR" [-sites en,jp] [-out DIR | -index DIR] [-json]
+        read the docs from local copies of the sites (one folder per site, as the
+        sites publish them) and write a snapshot to -out, or an index to -index
+  %[1]s index import [-sites en,jp] [-index DIR] SNAPSHOT
+        verify a snapshot and build the local index from it
+  %[1]s index verify SNAPSHOT
+        check a snapshot's files against its manifest
+`
+
+// now is the clock, for tests.
+var now = time.Now
+
+func indexCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintf(stderr, indexUsage, server.Name)
+		return 2
+	}
+	switch args[0] {
+	case "build":
+		return indexBuild(ctx, args[1:], stdout, stderr)
+	case "import":
+		return indexImport(ctx, args[1:], stdout, stderr)
+	case "verify":
+		return indexVerify(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "%s index: unknown command %q\n\n"+indexUsage, server.Name, args[0], server.Name)
+		return 2
+	}
+}
+
+// indexDir returns the index folder: dir, $TDM_INDEX_DIR, or the default.
+func indexDir(dir string) (string, error) {
+	if dir != "" {
+		return dir, nil
+	}
+	if d := os.Getenv("TDM_INDEX_DIR"); d != "" {
+		return d, nil
+	}
+	return index.DefaultDir()
+}
+
+// pickSites returns the sites a list of codes names, in the order the site list has
+// them, or all of available when the list is empty.
+func pickSites(list string, available []site.Site) ([]site.Site, error) {
+	if strings.TrimSpace(list) == "" {
+		return available, nil
+	}
+	var want []string
+	for _, c := range strings.Split(list, ",") {
+		c = strings.TrimSpace(c)
+		if _, ok := site.ByCode(c); !ok {
+			return nil, fmt.Errorf("no site %q", c)
+		}
+		want = append(want, c)
+	}
+	var out []site.Site
+	for _, s := range available {
+		if slices.Contains(want, s.Code) {
+			out = append(out, s)
+		}
+	}
+	if len(out) != len(want) {
+		return nil, fmt.Errorf("-sites names a site that isn't available: %s", list)
+	}
+	return out, nil
+}
+
+// progressPrinter reports a build's progress on stderr now and then.
+func progressPrinter(stderr io.Writer) func(string, int, int) {
+	return func(code string, done, total int) {
+		if done%2000 == 0 || done == total {
+			fmt.Fprintf(stderr, "%s: %d of %d sitemap entries\n", code, done, total)
+		}
+	}
+}
+
+func indexBuild(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet(server.Name+" index build", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	source := fs.String("source", "", `the sites' local copies, as "en=DIR;jp=DIR" (as TDM_SITE_DIRS)`)
+	sitesFlag := fs.String("sites", "", "only these sites, such as en,jp (default: every site in -source)")
+	out := fs.String("out", "", "write a snapshot to this folder")
+	dir := fs.String("index", "", "write the index in this folder instead (default: $TDM_INDEX_DIR, or the user's cache folder)")
+	asJSON := fs.Bool("json", false, "print the report as JSON")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *source == "" || fs.NArg() > 0 || *out != "" && *dir != "" {
+		fmt.Fprintf(stderr, indexUsage, server.Name)
+		return 2
+	}
+	dirs, err := site.ParseSiteDirs(*source)
+	if err != nil {
+		fmt.Fprintln(stderr, "index build:", err)
+		return 2
+	}
+	src, err := site.NewLocal(dirs)
+	if err != nil {
+		fmt.Fprintln(stderr, "index build:", err)
+		return 2
+	}
+	sites, err := pickSites(*sitesFlag, src.Sites())
+	if err != nil {
+		fmt.Fprintln(stderr, "index build:", err)
+		return 2
+	}
+	builtAt := now().UTC()
+	opts := build.Options{Source: src, Sites: sites, Agent: server.Name, Progress: progressPrinter(stderr)}
+
+	var rep build.Report
+	var where string
+	if *out != "" {
+		w, err := snapshot.NewWriter(*out, server.Name+" "+version.Get(), builtAt)
+		if err != nil {
+			fmt.Fprintln(stderr, "index build:", err)
+			return 1
+		}
+		if rep, err = build.Run(ctx, opts, w); err != nil {
+			w.Abort()
+			fmt.Fprintln(stderr, "index build:", err)
+			return 1
+		}
+		if _, err := w.Close(); err != nil {
+			fmt.Fprintln(stderr, "index build:", err)
+			return 1
+		}
+		where = "snapshot in " + *out
+	} else {
+		d, err := indexDir(*dir)
+		if err != nil {
+			fmt.Fprintln(stderr, "index build:", err)
+			return 1
+		}
+		ix, err := index.Open(d)
+		if err != nil {
+			fmt.Fprintln(stderr, "index build:", err)
+			return 1
+		}
+		defer ix.Close()
+		sink := build.NewIndexSink(ix, builtAt.Format(time.RFC3339))
+		if rep, err = build.Run(ctx, opts, sink); err != nil {
+			sink.Discard()
+			fmt.Fprintln(stderr, "index build:", err)
+			return 1
+		}
+		if err := sink.Finish(ctx); err != nil {
+			sink.Discard()
+			fmt.Fprintln(stderr, "index build:", err)
+			return 1
+		}
+		where = "index in " + d
+	}
+	if *asJSON {
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(rep)
+	} else {
+		fmt.Fprintf(stdout, "Built %d pages into the %s: %s; %d tables of contents; %d left out by robots.txt; %d skipped.\n",
+			rep.Total(), where, shardCounts(rep.Pages), rep.Tocs, rep.Blocked, rep.Skipped)
+		for _, f := range rep.Failed {
+			fmt.Fprintln(stdout, "Failed:", f)
+		}
+	}
+	if len(rep.Failed) > 0 {
+		return 1
+	}
+	return 0
+}
+
+func shardCounts(pages map[string]int) string {
+	var keys []string
+	for k := range pages {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	var parts []string
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s %d", k, pages[k]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func indexImport(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet(server.Name+" index import", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	sitesFlag := fs.String("sites", "", "only these sites, such as en,jp (default: every site in the snapshot)")
+	dir := fs.String("index", "", "the index folder (default: $TDM_INDEX_DIR, or the user's cache folder)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintf(stderr, indexUsage, server.Name)
+		return 2
+	}
+	snap := fs.Arg(0)
+	m, err := snapshot.ReadManifest(snap)
+	if err != nil {
+		fmt.Fprintln(stderr, "index import:", err)
+		return 1
+	}
+	var inSnapshot []site.Site
+	for _, s := range site.Sites {
+		if slices.ContainsFunc(m.Shards, func(sh snapshot.Shard) bool { return sh.Site == s.Code }) {
+			inSnapshot = append(inSnapshot, s)
+		}
+	}
+	sites, err := pickSites(*sitesFlag, inSnapshot)
+	if err != nil {
+		fmt.Fprintln(stderr, "index import:", err)
+		return 2
+	}
+	d, err := indexDir(*dir)
+	if err != nil {
+		fmt.Fprintln(stderr, "index import:", err)
+		return 1
+	}
+	ix, err := index.Open(d)
+	if err != nil {
+		fmt.Fprintln(stderr, "index import:", err)
+		return 1
+	}
+	defer ix.Close()
+	sink := build.NewIndexSink(ix, m.BuiltAt)
+	pages := map[string]int{}
+	for _, sh := range m.Shards {
+		if !slices.ContainsFunc(sites, func(s site.Site) bool { return s.Code == sh.Site }) {
+			continue
+		}
+		if err := snapshot.Read(ctx, snap, sh, sink); err != nil {
+			sink.Discard()
+			fmt.Fprintln(stderr, "index import:", err)
+			return 1
+		}
+		pages[sh.Key] = sh.Pages
+	}
+	if err := sink.Finish(ctx); err != nil {
+		sink.Discard()
+		fmt.Fprintln(stderr, "index import:", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Imported the snapshot built %s into the index in %s: %s.\n", m.BuiltAt, d, shardCounts(pages))
+	return 0
+}
+
+func indexVerify(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 1 {
+		fmt.Fprintf(stderr, indexUsage, server.Name)
+		return 2
+	}
+	m, err := snapshot.ReadManifest(args[0])
+	if err != nil {
+		fmt.Fprintln(stderr, "index verify:", err)
+		return 1
+	}
+	code := 0
+	for _, sh := range m.Shards {
+		if err := snapshot.Verify(args[0], sh); err != nil {
+			fmt.Fprintf(stdout, "✗ %s: %v\n", sh.File, err)
+			code = 1
+			continue
+		}
+		fmt.Fprintf(stdout, "✓ %s: %d pages, %.1f MB\n", sh.File, sh.Pages, float64(sh.Size)/(1<<20))
+	}
+	fmt.Fprintf(stdout, "Snapshot format %d, built %s by %s.\n", m.Format, m.BuiltAt, m.Generator)
+	return code
+}
