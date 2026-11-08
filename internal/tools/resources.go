@@ -91,20 +91,37 @@ func registerResources(s *mcp.Server, env *Env) {
 		return contents(uri, "text/markdown", tocMarkdown(out)), nil
 	})
 
-	// Each current English guide's table of contents, so clients can offer them.
-	if env.ready() != nil {
-		return
-	}
-	k := index.Key{Site: "en"}
-	if env.Index.Shard(k) == nil {
-		return
-	}
+	RegisterGuides(s, env)
+}
+
+// RegisterGuides lists each current English guide's table of contents as a resource,
+// so clients can offer them. After the index changes, calling it again adds new
+// guides and removes ones that are gone; the server tells clients the list changed.
+func RegisterGuides(s *mcp.Server, env *Env) {
+	env.guidesMu.Lock()
+	defer env.guidesMu.Unlock()
 	var guides []index.GuideInfo
-	_ = env.Index.With(k, func(sh *index.Shard) error {
-		var err error
-		guides, err = sh.Guides(context.Background())
-		return err
-	})
+	if k := (index.Key{Site: "en"}); env.Index != nil && env.Index.Shard(k) != nil {
+		_ = env.Index.With(k, func(sh *index.Shard) error {
+			var err error
+			guides, err = sh.Guides(context.Background())
+			return err
+		})
+	}
+	now := map[string]bool{}
+	for _, g := range guides {
+		now[TocURI(g.Path, "")] = true
+	}
+	var gone []string
+	for uri := range env.guideURIs {
+		if !now[uri] {
+			gone = append(gone, uri)
+		}
+	}
+	if len(gone) > 0 {
+		s.RemoveResources(gone...)
+	}
+	env.guideURIs = now
 	for _, g := range guides {
 		title := strings.TrimSpace(g.Product + " " + g.GuideType)
 		if title == "" {

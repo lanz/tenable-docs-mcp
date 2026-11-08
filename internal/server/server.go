@@ -10,6 +10,7 @@ import (
 
 	"github.com/lanz/tenable-docs-mcp/internal/feedback"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
+	"github.com/lanz/tenable-docs-mcp/internal/official"
 	"github.com/lanz/tenable-docs-mcp/internal/site"
 	"github.com/lanz/tenable-docs-mcp/internal/tools"
 	"github.com/lanz/tenable-docs-mcp/internal/version"
@@ -47,6 +48,9 @@ type Options struct {
 	// Hosted turns off what a shared server mustn't do: refresh_index, report_gap, and
 	// open_feedback_form.
 	Hosted bool
+	// Updates keeps the index up to date from the official snapshot; nil means
+	// automatic updates are off. New connects it to the tools; run it afterward.
+	Updates *official.Watcher
 }
 
 // New returns the MCP server with every tool, resource, and prompt registered.
@@ -61,6 +65,10 @@ func New(opts Options) *mcp.Server {
 		&mcp.ServerOptions{Instructions: instructions, CompletionHandler: env.Complete},
 	)
 	tools.Register(s, env)
+	if w := opts.Updates; w != nil {
+		env.Updates = w.Status
+		w.OnChange = func() { tools.RegisterGuides(s, env) }
+	}
 	return s
 }
 

@@ -10,12 +10,14 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lanz/tenable-docs-mcp/internal/feedback"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
+	"github.com/lanz/tenable-docs-mcp/internal/official"
 	"github.com/lanz/tenable-docs-mcp/internal/page"
 	"github.com/lanz/tenable-docs-mcp/internal/search"
 	"github.com/lanz/tenable-docs-mcp/internal/site"
@@ -36,8 +38,14 @@ type Env struct {
 	AllowRefresh bool
 	// Feedback sends open_feedback_form's feedback; nil turns it off (as in hosted mode).
 	Feedback *feedback.Sender
+	// Updates reports the automatic updates from the official snapshot; nil means
+	// they're off.
+	Updates func() official.Status
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+
+	guidesMu  sync.Mutex
+	guideURIs map[string]bool // the toc resources registered
 }
 
 // NewEnv returns an Env for an index, which may be nil.
@@ -71,10 +79,27 @@ func readOnly(title string) *mcp.ToolAnnotations {
 var errNoIndex = errors.New("the documentation index isn't built yet, so there's nothing to search; index_status shows its state")
 
 func (e *Env) ready() error {
-	if e.Index == nil || len(e.Index.Keys()) == 0 {
-		return errNoIndex
+	if e.Index != nil && len(e.Index.Keys()) > 0 {
+		return nil
 	}
-	return nil
+	if e.Updates != nil {
+		st := e.Updates()
+		switch {
+		case st.Updating:
+			return fmt.Errorf("the documentation index is downloading for the first time (%s); try again in a minute", lowerFirst(st.Step))
+		case st.LastError != "":
+			return fmt.Errorf("the documentation index isn't built: downloading it from docs.tenable.com failed (%s). "+
+				"The download is tried again every few minutes; index_status shows its state", st.LastError)
+		}
+	}
+	return errNoIndex
+}
+
+func lowerFirst(s string) string {
+	if s == "" {
+		return "starting"
+	}
+	return strings.ToLower(s[:1]) + s[1:]
 }
 
 // summary makes a tool result whose text is a short summary; the SDK adds the

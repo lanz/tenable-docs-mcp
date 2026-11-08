@@ -34,18 +34,32 @@ type shardState struct {
 }
 
 type indexState struct {
-	// State is "not built" or "ready".
-	State  string       `json:"state" jsonschema:"not built or ready"`
+	// State is "not built", "downloading", or "ready".
+	State  string       `json:"state" jsonschema:"not built, downloading (the first download is in progress), or ready"`
 	Folder string       `json:"folder,omitempty"`
 	Shards []shardState `json:"shards,omitempty"`
 }
 
+// updatesState describes the automatic updates from the official snapshot.
+type updatesState struct {
+	// On is false when automatic updates are turned off.
+	On              bool   `json:"on"`
+	Source          string `json:"source,omitempty" jsonschema:"where the official snapshot is downloaded from"`
+	Updating        bool   `json:"updating,omitempty" jsonschema:"an update is in progress"`
+	Step            string `json:"step,omitempty" jsonschema:"what the update in progress is doing"`
+	CheckedAt       string `json:"checked_at,omitempty" jsonschema:"when the last successful check for an update finished"`
+	SnapshotBuiltAt string `json:"snapshot_built_at,omitempty" jsonschema:"when the official snapshot that check found was built"`
+	LastError       string `json:"last_error,omitempty" jsonschema:"why the last check failed, if it did"`
+	ErrorAt         string `json:"error_at,omitempty"`
+}
+
 type statusOut struct {
-	Server    string     `json:"server"`
-	Version   string     `json:"version"`
-	GoVersion string     `json:"go_version"`
-	Index     indexState `json:"index"`
-	Note      string     `json:"note,omitempty"`
+	Server    string       `json:"server"`
+	Version   string       `json:"version"`
+	GoVersion string       `json:"go_version"`
+	Index     indexState   `json:"index"`
+	Updates   updatesState `json:"updates"`
+	Note      string       `json:"note,omitempty"`
 }
 
 func registerStatus(s *mcp.Server, env *Env) {
@@ -87,10 +101,23 @@ func (e *Env) status(ctx context.Context) (statusOut, string, error) {
 			}
 		}
 	}
-	if len(out.Index.Shards) > 0 {
+	if e.Updates != nil {
+		st := e.Updates()
+		out.Updates = updatesState{On: true, Source: st.URL, Updating: st.Updating, Step: st.Step, CheckedAt: st.CheckedAt,
+			SnapshotBuiltAt: st.BuiltAt, LastError: st.LastError, ErrorAt: st.ErrorAt}
+	}
+	switch {
+	case len(out.Index.Shards) > 0:
 		out.Index.State = "ready"
-	} else {
-		out.Note = "The documentation index isn't built yet, so the search and reading tools have nothing to work with."
+	case out.Updates.Updating:
+		out.Index.State = "downloading"
+		out.Note = "The documentation index is downloading for the first time; the search and reading tools work once it's done, in a minute or two."
+	case out.Updates.LastError != "":
+		out.Note = "The documentation index isn't built yet: downloading it failed, and the download is tried again every few minutes."
+	case out.Updates.On:
+		out.Note = "The documentation index isn't built yet; it downloads automatically shortly after the server starts."
+	default:
+		out.Note = "The documentation index isn't built yet, and automatic updates are off; run tenable-docs-mcp index pull to download it."
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s %s; index %s", out.Server, out.Version, out.Index.State)
@@ -100,6 +127,22 @@ func (e *Env) status(ctx context.Context) (statusOut, string, error) {
 	b.WriteString(".")
 	for _, sh := range out.Index.Shards {
 		fmt.Fprintf(&b, "\n- %s: %d pages, %d sections, last indexed %s", sh.Shard, sh.Pages, sh.Sections, sh.LastIndexed)
+	}
+	u := out.Updates
+	switch {
+	case !u.On:
+		b.WriteString("\nAutomatic updates are off.")
+	case u.Updating:
+		fmt.Fprintf(&b, "\nUpdating from %s: %s.", u.Source, u.Step)
+	default:
+		if u.CheckedAt != "" {
+			fmt.Fprintf(&b, "\nUpdates from %s: last checked %s; snapshot built %s.", u.Source, u.CheckedAt, u.SnapshotBuiltAt)
+		} else {
+			b.WriteString("\nUpdates from the official snapshot: not checked yet.")
+		}
+		if u.LastError != "" {
+			fmt.Fprintf(&b, "\nThe last check failed at %s: %s", u.ErrorAt, u.LastError)
+		}
 	}
 	if out.Note != "" {
 		b.WriteString("\n" + out.Note)
