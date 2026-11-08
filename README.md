@@ -25,7 +25,7 @@ For questions about Tenable's APIs, use the [Tenable Developer Portal MCP](https
 
 ## Why it exists
 
-General-purpose assistants answer Tenable product questions from training data, which mixes current and retired product names, old versions, and guesses. Tenable's documentation is large (about 21,200 pages across eight sites), versioned per product, partly translated, and structured in ways a generic web search ignores: settings tables, requirements tables, required-role statements, release-note entries, and per-guide tables of contents.
+Tenable's documentation is large (about 21,200 pages across eight sites), versioned per product, partly translated, and structured in ways a generic web search ignores: settings tables, requirements tables, required-role statements, release-note entries, and per-guide tables of contents.
 
 Tenable Docs MCP indexes that structure and exposes it through MCP tools, so an assistant can:
 
