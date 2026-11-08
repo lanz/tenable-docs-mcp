@@ -12,6 +12,7 @@ import (
 	"github.com/lanz/tenable-docs-mcp/internal/feedback"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
 	"github.com/lanz/tenable-docs-mcp/internal/published"
+	"github.com/lanz/tenable-docs-mcp/internal/search"
 	"github.com/lanz/tenable-docs-mcp/internal/site"
 	"github.com/lanz/tenable-docs-mcp/internal/tools"
 	"github.com/lanz/tenable-docs-mcp/internal/version"
@@ -55,11 +56,17 @@ type Options struct {
 	// OnDemand adds pages the index doesn't have from the live sites as the reading
 	// tools ask for them; nil turns that off, as hosted mode does.
 	OnDemand *crawl.OnDemand
+	// Synonyms reword searches into the docs' terms; nil means the ones that ship with
+	// the server.
+	Synonyms *search.Synonyms
 }
 
 // New returns the MCP server with every tool, resource, and prompt registered.
 func New(opts Options) *mcp.Server {
 	env := tools.NewEnv(tools.Info{Name: Name, Version: version.Get()}, opts.Index)
+	if opts.Synonyms != nil && env.Engine != nil {
+		env.Engine.Synonyms = opts.Synonyms
+	}
 	env.Live = opts.Live
 	if !opts.Hosted {
 		env.GapsFile, env.AllowRefresh, env.Feedback = opts.GapsFile, true, opts.Feedback

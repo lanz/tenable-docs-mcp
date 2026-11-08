@@ -200,3 +200,12 @@ func TestStatusWhenCrawling(t *testing.T) {
 		t.Errorf("summary = %q", text)
 	}
 }
+
+func TestDefineTermListsSynonyms(t *testing.T) {
+	cs := connect(t, buildIndex(t))
+	var out termOut
+	text := call(t, cs, "define_term", map[string]any{"term": "whitelist"}, &out)
+	if !slices.Contains(out.Synonyms, "allow list") || !strings.Contains(text, "Also searched as: allowlist, allow list") {
+		t.Errorf("synonyms = %q; %q", out.Synonyms, text)
+	}
+}

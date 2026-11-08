@@ -34,6 +34,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -44,6 +45,7 @@ import (
 	"github.com/lanz/tenable-docs-mcp/internal/gaps"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
 	"github.com/lanz/tenable-docs-mcp/internal/published"
+	"github.com/lanz/tenable-docs-mcp/internal/search"
 	"github.com/lanz/tenable-docs-mcp/internal/server"
 	"github.com/lanz/tenable-docs-mcp/internal/site"
 	"github.com/lanz/tenable-docs-mcp/internal/version"
@@ -144,7 +146,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		sender = &feedback.Sender{Endpoint: feedback.Endpoint, UserAgent: server.UserAgent(), LogFile: logFile}
 	}
 	live := site.NewHTTP(site.HTTPConfig{UserAgent: server.UserAgent()})
-	opts := server.Options{Index: ix, Live: live, GapsFile: gapsFile, Feedback: sender}
+	opts := server.Options{Index: ix, Live: live, GapsFile: gapsFile, Feedback: sender, Synonyms: loadSynonyms(stderr)}
 	if ix != nil {
 		u, err := publishedUpdater(ix, os.Getenv("TDM_SITES"))
 		if err != nil {
@@ -179,6 +181,33 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		return 2
 	}
 	return serveHTTP(ctx, server.NewHTTPServer(*httpAddr, server.HTTPHandler(srv)), stderr)
+}
+
+// synonymsPath returns the user's synonyms file: $TDM_SYNONYMS, or synonyms.txt in the
+// settings folder.
+func synonymsPath() (string, error) {
+	if p := os.Getenv("TDM_SYNONYMS"); p != "" {
+		return p, nil
+	}
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "tenable-docs-mcp", "synonyms.txt"), nil
+}
+
+// loadSynonyms returns the shipped synonyms with the user's added. A problem with the
+// user's file is reported on stderr, and the shipped synonyms are used alone.
+func loadSynonyms(stderr io.Writer) *search.Synonyms {
+	path, err := synonymsPath()
+	if err != nil {
+		return search.DefaultSynonyms()
+	}
+	s, err := search.LoadSynonyms(path)
+	if err != nil {
+		fmt.Fprintln(stderr, server.Name+": your synonyms aren't used:", err)
+	}
+	return s
 }
 
 // openIndex opens the documentation index, or returns nil (and says why on stderr) so

@@ -7,6 +7,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -137,5 +138,26 @@ func TestServeRejectsBadCrawlSetting(t *testing.T) {
 	t.Setenv("TDM_CRAWL", "sometimes")
 	if code, _, errOut := runCmd("serve"); code != 2 || !strings.Contains(errOut, "TDM_CRAWL must be on or off") {
 		t.Errorf("serve: %d %q", code, errOut)
+	}
+}
+
+func TestLoadSynonyms(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "synonyms.txt")
+	t.Setenv("TDM_SYNONYMS", path)
+	var errOut strings.Builder
+	if s := loadSynonyms(&errOut); s == nil || len(s.Of("whitelist")) == 0 || errOut.Len() != 0 {
+		t.Errorf("no user file: %q", errOut.String())
+	}
+	if err := os.WriteFile(path, []byte("vuln, vulnerability\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s := loadSynonyms(&errOut); len(s.Of("vuln")) != 1 {
+		t.Error("the user's synonyms weren't added")
+	}
+	if err := os.WriteFile(path, []byte("lonely\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if s := loadSynonyms(&errOut); len(s.Of("whitelist")) == 0 || !strings.Contains(errOut.String(), "your synonyms aren't used") {
+		t.Errorf("broken file: %q", errOut.String())
 	}
 }

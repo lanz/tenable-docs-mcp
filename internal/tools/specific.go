@@ -670,6 +670,13 @@ func registerSpecific(s *mcp.Server, env *Env) {
 				return nil, termOut{}, err
 			}
 		}
+		if env.Engine != nil && env.Engine.Synonyms != nil {
+			for _, s := range env.Engine.Synonyms.Of(term) {
+				if !slices.Contains(out.Synonyms, s) {
+					out.Synonyms = append(out.Synonyms, s)
+				}
+			}
+		}
 		if len(out.Definitions) == 0 && out.Product == nil {
 			out.Message = fmt.Sprintf("The glossaries don't define %q. Try search_docs, which finds terms explained in the guides.", term)
 		}

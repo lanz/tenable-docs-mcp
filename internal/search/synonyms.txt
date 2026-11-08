@@ -1,0 +1,25 @@
+# Words customers search with, and the words the docs use for the same thing.
+#
+# Each line is a group of terms that mean the same. A search that contains one of them
+# also searches with each of the others in its place, so pages using any of the
+# wordings match. A term can be a phrase. Matching ignores case.
+#
+# The pairs come from support-site searches that missed the docs' wording, and the
+# documentation team reviewed them. Users can add their own groups in synonyms.txt in
+# the settings folder (see the README).
+
+whitelist, allowlist, allow list
+blacklist, blocklist, block list, deny list
+tcpdump, packet capture
+activation key, activation code
+paranoid mode, show potential false alarms
+
+# "aes" alone also means the Advanced Encryption Standard.
+aes score, asset exposure score
+
+# Lowercase "was" is an ordinary word, so only these phrases mean Web App Scanning.
+was scan, web app scanning scan
+was scanner, web app scanning scanner
+
+eol, end of life
+ssl, tls

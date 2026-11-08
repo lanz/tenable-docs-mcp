@@ -68,7 +68,7 @@ func TestEndToEnd(t *testing.T) {
 		return json.Unmarshal(raw, out)
 	}
 
-	sets := []string{"eval-en", "eval-en-holdout", "eval-versions", "eval-ja", "eval-fr"}
+	sets := []string{"eval-en", "eval-en-holdout", "eval-versions", "eval-ja", "eval-fr", "eval-wording"}
 	for _, set := range sets {
 		data, err := os.ReadFile(filepath.Join("..", "..", "internal", "search", "testdata", set+".json"))
 		if err != nil {
