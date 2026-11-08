@@ -17,8 +17,8 @@ import (
 
 	"github.com/lanz/tenable-docs-mcp/internal/feedback"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
-	"github.com/lanz/tenable-docs-mcp/internal/official"
 	"github.com/lanz/tenable-docs-mcp/internal/page"
+	"github.com/lanz/tenable-docs-mcp/internal/published"
 	"github.com/lanz/tenable-docs-mcp/internal/search"
 	"github.com/lanz/tenable-docs-mcp/internal/site"
 )
@@ -38,9 +38,9 @@ type Env struct {
 	AllowRefresh bool
 	// Feedback sends open_feedback_form's feedback; nil turns it off (as in hosted mode).
 	Feedback *feedback.Sender
-	// Updates reports the automatic updates from the official snapshot; nil means
+	// Updates reports the automatic updates from the published snapshot; nil means
 	// they're off.
-	Updates func() official.Status
+	Updates func() published.Status
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 

@@ -18,7 +18,7 @@ import (
 
 	"github.com/lanz/tenable-docs-mcp/internal/build"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
-	"github.com/lanz/tenable-docs-mcp/internal/official"
+	"github.com/lanz/tenable-docs-mcp/internal/published"
 	"github.com/lanz/tenable-docs-mcp/internal/server"
 	"github.com/lanz/tenable-docs-mcp/internal/site"
 	"github.com/lanz/tenable-docs-mcp/internal/snapshot"
@@ -27,7 +27,7 @@ import (
 
 const indexUsage = `Usage:
   %[1]s index pull [-sites en,jp] [-index DIR]
-        download the official index from docs.tenable.com, or update it: only shards
+        download the published index from docs.tenable.com, or update it: only shards
         that changed are downloaded and rebuilt
   %[1]s index build -source "en=DIR;jp=DIR" [-sites en,jp] [-out DIR | -index DIR] [-json]
         read the docs from local copies of the sites (one folder per site, as the
@@ -275,16 +275,16 @@ func indexImport(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	return 0
 }
 
-// officialUpdater returns the updater for the official snapshot, from $TDM_INDEX_URL
-// (default official.DefaultURL; "off" turns updates off, and gives nil) and a list of
+// publishedUpdater returns the updater for the published snapshot, from $TDM_INDEX_URL
+// (default published.DefaultURL; "off" turns updates off, and gives nil) and a list of
 // site codes (default every site).
-func officialUpdater(ix *index.Index, siteList string) (*official.Updater, error) {
+func publishedUpdater(ix *index.Index, siteList string) (*published.Updater, error) {
 	url := strings.TrimSpace(os.Getenv("TDM_INDEX_URL"))
 	if strings.EqualFold(url, "off") {
 		return nil, nil
 	}
 	if url == "" {
-		url = official.DefaultURL
+		url = published.DefaultURL
 	}
 	if !strings.HasPrefix(url, "https://") {
 		return nil, fmt.Errorf("TDM_INDEX_URL must be an https:// address, or off: %q", url)
@@ -293,7 +293,7 @@ func officialUpdater(ix *index.Index, siteList string) (*official.Updater, error
 	if err != nil {
 		return nil, err
 	}
-	u := &official.Updater{URL: url, UserAgent: server.UserAgent(), Index: ix, Now: now}
+	u := &published.Updater{URL: url, UserAgent: server.UserAgent(), Index: ix, Now: now}
 	if len(sites) < len(site.Sites) {
 		for _, s := range sites {
 			u.Sites = append(u.Sites, s.Code)
@@ -329,7 +329,7 @@ func indexPull(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	if list == "" {
 		list = os.Getenv("TDM_SITES")
 	}
-	u, err := officialUpdater(ix, list)
+	u, err := publishedUpdater(ix, list)
 	if err != nil {
 		fmt.Fprintln(stderr, "index pull:", err)
 		return 2

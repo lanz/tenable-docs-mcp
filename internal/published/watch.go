@@ -2,7 +2,7 @@
 // Project: <https://github.com/lanz/tenable-docs-mcp>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package official
+package published
 
 import (
 	"context"

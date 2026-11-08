@@ -2,7 +2,7 @@
 // Project: <https://github.com/lanz/tenable-docs-mcp>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Package official downloads the official index snapshot from docs.tenable.com and
+// Package published downloads the index snapshot published on docs.tenable.com and
 // builds the local index from it, then keeps it up to date.
 //
 // An update reads the snapshot's manifest, downloads only the shard files whose
@@ -15,7 +15,7 @@
 // manifest is requested with a query string the CDN hasn't cached. Publishing keeps
 // old shard files for days, so even an old manifest's files can be found; if one is
 // missing anyway, the update reads the manifest again once.
-package official
+package published
 
 import (
 	"context"
@@ -38,7 +38,7 @@ import (
 	"github.com/lanz/tenable-docs-mcp/internal/snapshot"
 )
 
-// DefaultURL is where the official snapshot is published.
+// DefaultURL is where the snapshot is published.
 const DefaultURL = "https://docs.tenable.com/mcp/index/v1/"
 
 // SnapshotDir is the index folder's subfolder that holds the downloaded snapshot.
@@ -57,7 +57,7 @@ const (
 // ErrBusy is returned when another process is updating the same index.
 var ErrBusy = errors.New("another tenable-docs-mcp is updating this index")
 
-// Updater updates an index from the official snapshot.
+// Updater updates an index from the published snapshot.
 type Updater struct {
 	// URL is the snapshot's folder, ending in a slash (default DefaultURL).
 	URL string
@@ -126,7 +126,7 @@ type errMissing struct{ file string }
 
 func (e errMissing) Error() string { return e.file + " isn't on the server" }
 
-// Update brings the index up to date with the official snapshot, and records the
+// Update brings the index up to date with the published snapshot, and records the
 // check in the index folder's state file, whether it succeeds or not.
 func (u *Updater) Update(ctx context.Context) (Result, error) {
 	unlock, err := lock(u.Index.Dir, u.now())
@@ -363,7 +363,7 @@ func writeFileAtomic(path string, data []byte) error {
 }
 
 // StateFile is the index folder's record of the last update check.
-const StateFile = "official.json"
+const StateFile = "updates.json"
 
 // State records the last update check, so every process using the index folder
 // knows when the next one is due.

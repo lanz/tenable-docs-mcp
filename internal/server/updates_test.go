@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/lanz/tenable-docs-mcp/internal/index"
-	"github.com/lanz/tenable-docs-mcp/internal/official"
+	"github.com/lanz/tenable-docs-mcp/internal/published"
 )
 
 func TestNewConnectsUpdates(t *testing.T) {
@@ -18,7 +18,7 @@ func TestNewConnectsUpdates(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ix.Close()
-	w := &official.Watcher{Updater: &official.Updater{Index: ix}}
+	w := &published.Watcher{Updater: &published.Updater{Index: ix}}
 	New(Options{Index: ix, Updates: w})
 	if w.OnChange == nil {
 		t.Fatal("New didn't connect the watcher's OnChange")

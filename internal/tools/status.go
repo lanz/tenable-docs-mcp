@@ -40,15 +40,15 @@ type indexState struct {
 	Shards []shardState `json:"shards,omitempty"`
 }
 
-// updatesState describes the automatic updates from the official snapshot.
+// updatesState describes the automatic updates from the published snapshot.
 type updatesState struct {
 	// On is false when automatic updates are turned off.
 	On              bool   `json:"on"`
-	Source          string `json:"source,omitempty" jsonschema:"where the official snapshot is downloaded from"`
+	Source          string `json:"source,omitempty" jsonschema:"where the published snapshot is downloaded from"`
 	Updating        bool   `json:"updating,omitempty" jsonschema:"an update is in progress"`
 	Step            string `json:"step,omitempty" jsonschema:"what the update in progress is doing"`
 	CheckedAt       string `json:"checked_at,omitempty" jsonschema:"when the last successful check for an update finished"`
-	SnapshotBuiltAt string `json:"snapshot_built_at,omitempty" jsonschema:"when the official snapshot that check found was built"`
+	SnapshotBuiltAt string `json:"snapshot_built_at,omitempty" jsonschema:"when the published snapshot that check found was built"`
 	LastError       string `json:"last_error,omitempty" jsonschema:"why the last check failed, if it did"`
 	ErrorAt         string `json:"error_at,omitempty"`
 }
@@ -138,7 +138,7 @@ func (e *Env) status(ctx context.Context) (statusOut, string, error) {
 		if u.CheckedAt != "" {
 			fmt.Fprintf(&b, "\nUpdates from %s: last checked %s; snapshot built %s.", u.Source, u.CheckedAt, u.SnapshotBuiltAt)
 		} else {
-			b.WriteString("\nUpdates from the official snapshot: not checked yet.")
+			b.WriteString("\nUpdates from the published snapshot: not checked yet.")
 		}
 		if u.LastError != "" {
 			fmt.Fprintf(&b, "\nThe last check failed at %s: %s", u.ErrorAt, u.LastError)

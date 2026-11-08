@@ -13,7 +13,7 @@ import (
 )
 
 // serveSnapshot builds the made-up sites into a snapshot and serves it over HTTPS,
-// as docs.tenable.com serves the official one, for index pull to download.
+// as docs.tenable.com serves the published one, for index pull to download.
 func serveSnapshot(t *testing.T) string {
 	t.Helper()
 	snap := filepath.Join(t.TempDir(), "snapshot")

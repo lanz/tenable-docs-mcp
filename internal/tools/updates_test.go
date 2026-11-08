@@ -13,7 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lanz/tenable-docs-mcp/internal/index"
-	"github.com/lanz/tenable-docs-mcp/internal/official"
+	"github.com/lanz/tenable-docs-mcp/internal/published"
 )
 
 func emptyIndex(t *testing.T) *index.Index {
@@ -27,13 +27,13 @@ func emptyIndex(t *testing.T) *index.Index {
 }
 
 func TestStatusAndErrorsWhileDownloading(t *testing.T) {
-	var st official.Status
+	var st published.Status
 	env := NewEnv(Info{Name: "tenable-docs-mcp", Version: "test"}, emptyIndex(t))
-	env.Updates = func() official.Status { return st }
+	env.Updates = func() published.Status { return st }
 	cs := connectEnv(t, env)
-	src := official.DefaultURL
+	src := published.DefaultURL
 
-	st = official.Status{State: official.State{URL: src}, Updating: true, Step: "Downloading en-current-abc.jsonl.zst (5.0 MB)"}
+	st = published.Status{State: published.State{URL: src}, Updating: true, Step: "Downloading en-current-abc.jsonl.zst (5.0 MB)"}
 	var out statusOut
 	text := call(t, cs, "index_status", nil, &out)
 	if out.Index.State != "downloading" || !out.Updates.On || !out.Updates.Updating || out.Updates.Source != src {
@@ -47,7 +47,7 @@ func TestStatusAndErrorsWhileDownloading(t *testing.T) {
 		t.Errorf("search while downloading: %v %q", isErr, msg)
 	}
 
-	st = official.Status{State: official.State{URL: src, LastError: "manifest: HTTP 503", ErrorAt: "2026-11-08T12:00:00Z"}}
+	st = published.Status{State: published.State{URL: src, LastError: "manifest: HTTP 503", ErrorAt: "2026-11-08T12:00:00Z"}}
 	out = statusOut{}
 	text = call(t, cs, "index_status", nil, &out)
 	if out.Index.State != "not built" || out.Updates.LastError != "manifest: HTTP 503" || !strings.Contains(out.Note, "tried again") {
@@ -73,8 +73,8 @@ func TestStatusWithUpdatesOff(t *testing.T) {
 
 func TestStatusWhenReady(t *testing.T) {
 	env := NewEnv(Info{Name: "tenable-docs-mcp", Version: "test"}, buildIndex(t))
-	env.Updates = func() official.Status {
-		return official.Status{State: official.State{URL: official.DefaultURL, CheckedAt: "2026-11-08T12:00:00Z", BuiltAt: "2026-11-08T05:47:43Z"}}
+	env.Updates = func() published.Status {
+		return published.Status{State: published.State{URL: published.DefaultURL, CheckedAt: "2026-11-08T12:00:00Z", BuiltAt: "2026-11-08T05:47:43Z"}}
 	}
 	var out statusOut
 	text := call(t, connectEnv(t, env), "index_status", nil, &out)
