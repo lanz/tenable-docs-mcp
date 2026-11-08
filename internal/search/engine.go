@@ -20,6 +20,8 @@ import (
 // same page in other languages and versions.
 type Engine struct {
 	Index *index.Index
+	// Synonyms reword questions into the docs' terms; nil turns that off.
+	Synonyms *Synonyms
 
 	mu        sync.Mutex
 	searchers map[*index.Shard]*Searcher // by shard, so a swapped-in shard gets a new one
@@ -27,7 +29,7 @@ type Engine struct {
 
 // NewEngine returns an Engine for an index.
 func NewEngine(ix *index.Index) *Engine {
-	return &Engine{Index: ix, searchers: map[*index.Shard]*Searcher{}}
+	return &Engine{Index: ix, Synonyms: DefaultSynonyms(), searchers: map[*index.Shard]*Searcher{}}
 }
 
 // Variants are the same page in other languages and versions.
@@ -85,6 +87,69 @@ var languageNames = map[string]string{"en": "English", "jp": "Japanese", "zh-cn"
 
 // Search runs a search across the index.
 func (e *Engine) Search(ctx context.Context, req Request) (*Result, error) {
+	res, err := e.search(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	alts := e.Synonyms.Alternatives(req.Query)
+	if len(alts) == 0 {
+		return res, nil
+	}
+	limit := req.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	// Search again with each synonym in the question, and keep the best sections from
+	// all the searches. Results in another language aren't mixed in.
+	seen := map[string]bool{}
+	for _, h := range res.Hits {
+		seen[h.URL] = true
+	}
+	var used []string
+	for _, alt := range alts {
+		r := req
+		r.Query = alt.Query
+		ar, err := e.search(ctx, r)
+		if err != nil || ar == nil || len(ar.Hits) == 0 || ar.Language != res.Language {
+			continue
+		}
+		if len(res.Hits) == 0 {
+			// The question's own words found nothing: these results are the answer.
+			ar.Notes = append(res.Notes, ar.Notes...)
+			res, seen = ar, map[string]bool{}
+			for _, h := range res.Hits {
+				seen[h.URL] = true
+			}
+			used = append(used, fmt.Sprintf("%q for %q", alt.Synonym, alt.Term))
+			continue
+		}
+		added := false
+		for _, h := range ar.Hits {
+			if !seen[h.URL] {
+				seen[h.URL] = true
+				res.Hits = append(res.Hits, h)
+				added = true
+			}
+		}
+		if added {
+			res.Relaxed = res.Relaxed && ar.Relaxed
+			used = append(used, fmt.Sprintf("%q for %q", alt.Synonym, alt.Term))
+		}
+	}
+	if len(used) == 0 {
+		return res, nil
+	}
+	slices.SortStableFunc(res.Hits, func(a, b Hit) int { return cmpFloat(b.Score, a.Score) })
+	if len(res.Hits) > limit {
+		res.Hits = res.Hits[:limit]
+	}
+	res.Suggestions, res.NoResultsShown = nil, ""
+	res.Notes = append(res.Notes, "Also searched with the docs' wording: "+strings.Join(used, ", ")+".")
+	return res, nil
+}
+
+// search answers a question in its own words.
+func (e *Engine) search(ctx context.Context, req Request) (*Result, error) {
 	lang := ""
 	if req.Language != "" {
 		l, ok := SiteFor(req.Language)

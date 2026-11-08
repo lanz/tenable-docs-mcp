@@ -104,7 +104,7 @@ func DetectLanguage(q string) string {
 // "a" and "in", aren't counted.)
 var latinMarkers = map[string][]string{
 	"fr": strings.Fields("le la les des du une est sont comment quel quelle quels quelles pour dans sur avec sans je mon ma mes nous vous votre vos ce cette ces qui que où être faire configurer créer ajouter supprimer installer exigences paramètres nouveautés"),
-	"de": strings.Fields("der die das den dem des ein eine einen und oder ist sind wie was welche welcher welches ich mein meine wir ihr zu zum zur von vom bei kann können muss für mit ohne nicht auch erstellen hinzufügen löschen konfigurieren einrichten installieren anforderungen einstellungen"),
+	"de": strings.Fields("der die das den dem des ein eine einen und oder ist sind wie welche welcher welches ich mein meine wir ihr zu zum zur von vom bei kann können muss für mit ohne nicht auch erstellen hinzufügen löschen konfigurieren einrichten installieren anforderungen einstellungen"),
 	"es": strings.Fields("el los las una unos unas del y es son está cómo qué cuál cuáles dónde para con sin yo mi mis nos su sus puedo puede debo hay hacer crear agregar añadir eliminar configurar instalar requisitos novedades"),
 	"en": strings.Fields("the is are how what which where can do does my to of for with without and or i create add delete configure set install requirements settings new"),
 }

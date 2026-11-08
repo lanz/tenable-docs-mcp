@@ -104,6 +104,7 @@ When `read_doc`, `outline`, or `related_pages` is given a docs page the index do
 | `TDM_INDEX_URL` | `off` turns automatic downloads and updates off. Any other value is the `https://` address of a snapshot folder to use instead of the one on docs.tenable.com. |
 | `TDM_CRAWL` | `off` turns off reading the live sites when the prebuilt index can't be reached, and fetching new pages on demand. The default is `on`. |
 | `TDM_SITES` | Only download or read these sites, such as `en,jp` (default: all eight). `-sites` on `index pull` and `index crawl` does the same for one run. |
+| `TDM_SYNONYMS` | The file of your own synonyms, instead of `synonyms.txt` in the settings folder (see [Synonyms](#synonyms)). |
 
 ## Connect it to an MCP client
 
@@ -219,7 +220,7 @@ The server registers 16 tools. Each returns structured output (with a JSON schem
 | `required_role` | The roles and permissions the docs say a task needs, by page. When no matching page states a role, it says so and lists the closest pages. | `task`, `product`, `version`, and `language` |
 | `requirements` | Rows from requirements tables: `ports`, `hardware`, `operating-systems`, `browsers`, `dependencies`, or `other`. Infers the kind and product from a question such as "Security Center hardware for 10,000 hosts". | `product`, `kind`, `query`, `version`, and `limit` (1 to 100, default 30) |
 | `release_notes` | Release-note entries, newest first, filtered by product, date range, version (10.8 matches 10.8.1), and words. | `product`, `since`, `until` (`YYYY`, `YYYY-MM`, or `YYYY-MM-DD`), `version`, `query`, `language`, `full`, and `limit` (1 to 50, default 10) |
-| `define_term` | Glossary definitions (abbreviations also match by initials, so NVD finds National Vulnerability Database), and what a product name refers to, including retired names. | `term` and `language` |
+| `define_term` | Glossary definitions (abbreviations also match by initials, so NVD finds National Vulnerability Database), what a product name refers to, including retired names, and the term's synonyms. | `term` and `language` |
 
 `find_setting` and `requirements` read English pages, because they recognize tables by their English column headings. For a question in another language, they say so in their notes.
 
@@ -332,10 +333,25 @@ A section is indexed with four columns, weighted for bm25: page title (10), sect
 Before searching, the question is parsed:
 
 - **Language.** The `language` argument wins. Otherwise kana means Japanese, Hangul means Korean, and Chinese characters alone mean Simplified or Traditional Chinese, decided by characters that differ between the scripts. Latin-script questions are French, German, or Spanish when those languages' common words and accents outnumber English ones; anything else is English.
-- **Products.** Product names and aliases are matched longest first ("Nessus Network Monitor" before "Nessus"), so "Tenable.sc", "tsc", and "Security Center" all mean Security Center. Short aliases that are also ordinary words, such as `SC` and `WAS`, match only in capitals.
+- **Products.** Product names and aliases are matched longest first ("Nessus Network Monitor" before "Nessus"), so "Tenable.sc", "tsc", and "Security Center" all mean Security Center. Short aliases that are also ordinary words, such as `SC` and `WAS`, match only in capitals; the synonyms catch phrases such as "was scan".
 - **Version.** A version such as `6.3` or `10.8.1` is taken when it's next to a product name or written as "version 6.3" or "v6.3", and not when it's part of a longer dotted number such as an IP address.
 - **Intent.** Patterns in English and in the translated sites' languages mark a question as what's new, requirements, or how-to, and note whether it's about installing.
+- **Synonyms.** When the question contains a term that customers use and the docs don't, such as "whitelist" for "allow list" or "tcpdump" for "packet capture", it's also searched with the docs' term in its place, and the results are merged. The response's notes say which terms were added. See [Synonyms](#synonyms).
 - **Terms.** Quoted phrases are searched as written. Filler words are dropped in English, French, German, and Spanish; product names and the version are removed from the terms; and split compounds are joined ("back up" becomes "backup", "log in" becomes "login"). Japanese and Chinese text is split at function words and, for Japanese, at changes between katakana, hiragana, and kanji; Korean words lose their particles.
+
+### Synonyms
+
+[`internal/search/synonyms.txt`](internal/search/synonyms.txt), built into the binary, lists groups of terms that mean the same: a word customers search with, and the word the docs use. The groups come from support-site searches that missed the docs' wording, and the documentation team reviewed them. A search that contains one of a group's terms, as whole words, is also run with each of the group's other terms in its place, up to six rewordings. The best sections from all the searches are kept, and results in another language aren't mixed in. Groups work in both directions, and a term can be a phrase: "was scan" means Web App Scanning, where "was" alone is an ordinary word. `define_term` lists a term's synonyms, too.
+
+You can add your own groups in `synonyms.txt` in the `tenable-docs-mcp` settings folder (`~/.config` on Linux, `~/Library/Application Support` on macOS, `%AppData%` on Windows), or in the file `TDM_SYNONYMS` names. Write one group per line, its terms separated by commas; lines starting with `#` are comments:
+
+```text
+# Our team's words
+vuln, vulnerability
+scan window, scan schedule
+```
+
+The server reads the file when it starts. If a line can't be read, the server says so on standard error and uses the built-in groups alone.
 
 ### Ranking
 
@@ -524,6 +540,7 @@ Only feedback or a gap report that the user writes, or approves, in a form their
 | The index, with the downloaded snapshot in its `snapshot` folder | `tenable-docs-mcp/index` in the user cache folder (`~/.cache` on Linux, `~/Library/Caches` on macOS, `%LocalAppData%` on Windows), or `$TDM_INDEX_DIR` | Folders `0700`, new files `0600` |
 | Questions recorded with `report_gap` | `tenable-docs-mcp/gaps.jsonl` in the user settings folder (`~/.config` on Linux, `~/Library/Application Support` on macOS, `%AppData%` on Windows) | Folder `0700`, file `0600` |
 | A log of feedback sent, which also counts the rate limits | `tenable-docs-mcp/feedback.jsonl` in the user settings folder | Folder `0700`, file `0600` |
+| Your synonyms, if you add them | `tenable-docs-mcp/synonyms.txt` in the user settings folder, or `$TDM_SYNONYMS` | Yours; the server only reads it |
 
 On Windows, permission bits don't apply; those folders are already private to the user. A recorded gap holds the question, product, language, the assistant's note on what it searched, the server version, and the time. The note stays on this computer. `tenable-docs-mcp gaps clear -yes` deletes the file.
 
@@ -551,8 +568,9 @@ Search quality is measured with evaluation sets in [`internal/search/testdata`](
 | Older versions (`eval-versions`) | 12 | 0.92 | 0.87 | 0.80 / 0.60 |
 | Japanese (`eval-ja`) | 14 | 1.00 | 0.75 | 0.70 / 0.50 |
 | French (`eval-fr`) | 10 | 0.90 | 0.90 | 0.70 / 0.50 |
+| Customers' wording (`eval-wording`) | 11 | 1.00 | 0.82 | 0.80 / 0.60 |
 
-Scores are from a full index. Ranking was tuned on `eval-en`. The holdout set was written separately and not tuned on, so it shows how well the tuning generalizes. The French set includes a question that only the English docs answer, which tests the fallback.
+Scores are from a full index. Ranking was tuned on `eval-en`. The holdout set was written separately and not tuned on, so it shows how well the tuning generalizes. The French set includes a question that only the English docs answer, which tests the fallback. The wording set asks in the words customers search with, such as "whitelist" and "paranoid mode"; without synonyms, it scores 0.27.
 
 The specialized tools have their own sets in [`internal/tools/testdata`](internal/tools/testdata), which require the right page among each tool's first five for at least 90% of questions. An end-to-end test builds the binary, runs it over stdio as a client would, answers every evaluation question with `search_docs` and then `read_doc`, and checks that each answer comes with a citation `read_doc` can open.
 

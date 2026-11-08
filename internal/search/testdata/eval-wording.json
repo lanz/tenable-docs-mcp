@@ -1,0 +1,13 @@
+[
+  {"q": "security center file and process whitelist", "expect": ["security-center/Content/AllowList.htm"]},
+  {"q": "blacklist software in patch management", "expect": ["integrations/Tenable-Patch-Management/Content/blocklisting.htm"]},
+  {"q": "run tcpdump during a nessus scan", "expect": ["nessus/Content/ConfigurePacketCapture.htm"]},
+  {"q": "where do I find my nessus activation key", "expect": ["nessus/Content/ManageActivationCode.htm"]},
+  {"q": "nessus paranoid mode", "expect": ["nessus/Content/AssessmentSettingsPreconfigured.htm", "vulnerability-management/Content/Scans/AssessmentSettingsPreconfigured.htm"]},
+  {"q": "what is the aes score", "expect": ["exposure-management/Content/getting-started/metrics.htm"]},
+  {"q": "was scan aborted", "expect": ["web-app-scanning/Content/WAS/Scans/ScanStatus.htm", "web-app-scanning/Content/WAS/Scans/AdvancedSettings.htm"]},
+  {"q": "find eol software", "expect": ["cyber-exposure-studies/application-software-security/Content/UnsupportedSoftware.htm"]},
+  {"q": "renew the identity exposure ssl certificate", "expect": ["identity-exposure/on-premises/Content/Install/Installation_onprem/tls_certificate_renew.htm"]},
+  {"q": "tpm patching strategies", "expect": ["integrations/Tenable-Patch-Management/Content/adv-patch-strategies.htm", "integrations/Tenable-Patch-Management/Content/adv-strat-actions.htm", "integrations/Tenable-Patch-Management/Content/enterprise/patching-strategies.html"]},
+  {"q": "acas troubleshooting", "expect": ["security-center/Content/SCTroubleshooting.htm"]}
+]

@@ -30,6 +30,7 @@ var thresholds = map[string][2]float64{
 	"eval-versions":   {0.80, 0.60},
 	"eval-ja":         {0.70, 0.50},
 	"eval-fr":         {0.70, 0.50},
+	"eval-wording":    {0.80, 0.60},
 }
 
 type evalCase struct {
@@ -64,6 +65,8 @@ func (c evalCase) matches(pageURL string) bool {
 //   - eval-ja, eval-fr: Japanese and French questions. French covers only some
 //     products, so its set includes one the English docs must answer.
 //   - eval-versions: questions about older versions of on-premises products.
+//   - eval-wording: questions in customers' words rather than the docs', from support-site
+//     searches, which the synonyms and product names answer.
 //
 // It needs an index: TDM_INDEX_DIR holding one, or TDM_SITE_DIRS to build the shards it
 // needs (English current and older versions, Japanese, and French) from local copies of
@@ -71,7 +74,7 @@ func (c evalCase) matches(pageURL string) bool {
 func TestEval(t *testing.T) {
 	ix := evalIndex(t)
 	e := NewEngine(ix)
-	for _, set := range []string{"eval-en", "eval-en-holdout", "eval-versions", "eval-ja", "eval-fr"} {
+	for _, set := range []string{"eval-en", "eval-en-holdout", "eval-versions", "eval-ja", "eval-fr", "eval-wording"} {
 		t.Run(set, func(t *testing.T) { evalSet(t, e, set) })
 	}
 }
