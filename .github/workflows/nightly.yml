@@ -1,0 +1,86 @@
+name: Nightly quality checks
+
+# Every night, and on demand: score search and the tools on the published index, and
+# check that the live sites still parse. Results are kept as artifacts, to compare
+# releases.
+
+on:
+  schedule:
+    - cron: "17 6 * * *" # 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evaluate:
+    name: evaluations on the published index
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      - name: download the published index
+        run: go run ./cmd/tenable-docs-mcp index pull -index "$RUNNER_TEMP/index" | tee pull.txt
+      - name: evaluations
+        env:
+          TDM_INDEX_DIR: ${{ runner.temp }}/index
+          TDM_EVAL_OUT: ${{ github.workspace }}/results
+        run: |
+          mkdir -p results
+          mv pull.txt results/
+          go run ./cmd/tenable-docs-mcp index verify "$TDM_INDEX_DIR/snapshot" > results/verify.txt
+          go test -count=1 -run 'TestEval|TestEndToEnd' -v ./internal/search ./internal/tools ./cmd/tenable-docs-mcp 2>&1 | tee results/evaluations.txt
+          test "${PIPESTATUS[0]}" -eq 0
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "## Evaluations on the published index"
+            echo
+            echo '```'
+            grep -h -E 'questions|sections:|answered with the right page|^(ok|FAIL|---)' results/evaluations.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: evaluations-${{ github.run_number }}
+          path: results/
+          retention-days: 90
+
+  yield:
+    name: parser yield on the live sites
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+      - name: parser yield
+        env:
+          TDM_LIVE: "1"
+          TDM_EVAL_OUT: ${{ github.workspace }}/results
+        run: |
+          mkdir -p results
+          go test -count=1 -run TestLiveYield -v -timeout 25m ./internal/build 2>&1 | tee results/yield.txt
+          test "${PIPESTATUS[0]}" -eq 0
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "## Parser yield on the live sites"
+            echo
+            echo '```'
+            grep -h -E 'pages;|empty:|failed:|^(ok|FAIL|---)' results/yield.txt || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: yield-${{ github.run_number }}
+          path: results/
+          retention-days: 90

@@ -341,7 +341,7 @@ Before searching, the question is parsed:
 
 ### Synonyms
 
-[`internal/search/synonyms.txt`](internal/search/synonyms.txt), built into the binary, lists groups of terms that mean the same: a word customers search with, and the word the docs use. The groups come from support-site searches that missed the docs' wording, and the documentation team reviewed them. A search that contains one of a group's terms, as whole words, is also run with each of the group's other terms in its place, up to six rewordings. The best sections from all the searches are kept, and results in another language aren't mixed in. Groups work in both directions, and a term can be a phrase: "was scan" means Web App Scanning, where "was" alone is an ordinary word. `define_term` lists a term's synonyms, too.
+[`internal/search/synonyms.txt`](internal/search/synonyms.txt), built into the binary, lists groups of terms that mean the same: a word customers search with, and the word the docs use. A search that contains one of a group's terms, as whole words, is also run with each of the group's other terms in its place, up to six rewordings. The best sections from all the searches are kept, and results in another language aren't mixed in. Groups work in both directions, and a term can be a phrase: "was scan" means Web App Scanning, where "was" alone is an ordinary word. `define_term` lists a term's synonyms, too.
 
 You can add your own groups in `synonyms.txt` in the `tenable-docs-mcp` settings folder (`~/.config` on Linux, `~/Library/Application Support` on macOS, `%AppData%` on Windows), or in the file `TDM_SYNONYMS` names. Write one group per line, its terms separated by commas; lines starting with `#` are comments:
 
@@ -355,7 +355,7 @@ The server reads the file when it starts. If a line can't be read, the server sa
 
 ### Ranking
 
-1. **Candidates.** The shard returns up to 120 sections that contain every term, ranked by bm25 with the column weights above. When few sections have every word (fewer than 30 for a question of three or more words), sections that miss one word are added at a penalty, so one stray word ("open", "need") doesn't hide the answer. When nothing matches, any of the words will do, and the result is marked `relaxed`.
+1. **Candidates.** The shard returns up to 120 sections that contain every term, ranked by bm25 with the column weights above. When few sections have every word (fewer than 30 for a question of three or more words), sections that miss one word are added at a penalty, so one stray word ("open", "need") doesn't hide the answer. When nothing matches, any of the words will do, and the result is marked `relaxed`. When the question names a product and none of the results are for it, the search runs again within that product, since words its pages don't use ("rolling out") can otherwise keep them out; the notes say so.
 2. **Rerank.** Each candidate's score is multiplied by boosts:
 
    | Signal | Factor |
@@ -559,7 +559,7 @@ User text reaches SQLite only as bound parameters, and every word in a full-text
 
 ## Search quality
 
-Search quality is measured with evaluation sets in [`internal/search/testdata`](internal/search/testdata). Each case is a question and the pages that answer it. A test runs every question through the search engine and reports recall at 5 (how often an expected page is in the top five) and mean reciprocal rank (MRR, 1 for a first-place answer, 1/2 for second, and so on, up to tenth).
+Search quality is measured with evaluation sets in [`internal/search/testdata`](internal/search/testdata). Each case is a question and the pages that answer it, and, where a page covers several things, the section (`#anchor`) that answers it. A test runs every question through the search engine and reports recall at 5 (how often an expected page is in the top five) and mean reciprocal rank (MRR, 1 for a first-place answer, 1/2 for second, and so on, up to tenth). Results below a set's threshold fail the test.
 
 | Set | Questions | Recall@5 | MRR | Test threshold |
 | --- | ---: | ---: | ---: | --- |
@@ -568,11 +568,23 @@ Search quality is measured with evaluation sets in [`internal/search/testdata`](
 | Older versions (`eval-versions`) | 12 | 0.92 | 0.87 | 0.80 / 0.60 |
 | Japanese (`eval-ja`) | 14 | 1.00 | 0.75 | 0.70 / 0.50 |
 | French (`eval-fr`) | 10 | 0.90 | 0.90 | 0.70 / 0.50 |
-| Customers' wording (`eval-wording`) | 11 | 1.00 | 0.82 | 0.80 / 0.60 |
+| Customers' wording (`eval-wording`) | 11 | 1.00 | 0.83 | 0.80 / 0.60 |
+| Common questions (`eval-common`) | 7 (6 scored) | 1.00 | 0.89 | 0.80 / 0.60 |
 
-Scores are from a full index. Ranking was tuned on `eval-en`. The holdout set was written separately and not tuned on, so it shows how well the tuning generalizes. The French set includes a question that only the English docs answer, which tests the fallback. The wording set asks in the words customers search with, such as "whitelist" and "paranoid mode"; without synonyms, it scores 0.27.
+Across the sets, 9 cases name the section that answers them, and 6 of those sections are in the top five (0.67, against a threshold of 0.60). Sections rank less well than pages: the right page's neighboring section, or its introduction, often comes first.
+
+Scores are from a full index. Ranking was tuned on `eval-en`. The holdout set was written separately and not tuned on, so it shows how well the tuning generalizes. The French set includes a question that only the English docs answer, which tests the fallback. The wording set asks in the words customers search with, such as "whitelist" and "paranoid mode"; without synonyms, it scores 0.27. The common questions set asks about tasks, settings, and roles. One of its questions ("report an unauthorized scan") has no page that answers it, so it isn't scored: the right answer says the docs don't cover it.
 
 The specialized tools have their own sets in [`internal/tools/testdata`](internal/tools/testdata), which require the right page among each tool's first five for at least 90% of questions. An end-to-end test builds the binary, runs it over stdio as a client would, answers every evaluation question with `search_docs` and then `read_doc`, and checks that each answer comes with a citation `read_doc` can open.
+
+### Nightly checks
+
+[A nightly workflow](.github/workflows/nightly.yml) runs every night and on demand:
+
+- **Evaluations:** it downloads the published index with `index pull`, verifies it, and runs the search, tool, and end-to-end evaluations against it.
+- **Parser yield:** it reads one product's guide from each language's live site (Nessus in English and Japanese, and Identity Exposure on the other six sites, at most 400 pages each) and checks that at least 99% of the pages parse with content, to catch changes to the sites' markup. It fails too when more than 2% of a guide's pages can't be downloaded.
+
+Each run's summary shows the scores, and the results are kept for 90 days as artifacts: each set's scores and every question's rank as JSON, and each language's yield.
 
 ## Development
 
@@ -599,7 +611,8 @@ Tests that need a real index, local copies of the sites, or the live sites are s
 | --- | --- |
 | `TDM_INDEX_DIR` | The search and tool evaluations and the end-to-end test, against the index in that folder |
 | `TDM_SITE_DIRS` | Builds from local copies of the sites (`en=DIR;jp=DIR`); the search evaluation builds the shards it needs, into `TDM_INDEX_DIR` when that's set |
-| `TDM_LIVE=1` | Checks against the live docs sites, such as comparing parsing and extraction of live pages with local copies |
+| `TDM_LIVE=1` | Checks against the live docs sites, such as comparing parsing and extraction of live pages with local copies, and the parser yield check |
+| `TDM_EVAL_OUT` | A folder for the search evaluations' and the yield check's results as JSON, to compare releases |
 | `TDM_BUILD_SITE` | The language the local build test builds (default `en`) |
 | `TDM_SAMPLES` | How many extracted rows the extraction check logs (default 3) |
 | `TDM_SHOW` | Logs each tool's full text answer in the tool evaluation |

@@ -175,3 +175,32 @@ func TestNewProductNames(t *testing.T) {
 		}
 	}
 }
+
+// A product the question names gets a search of its own when none of the results are
+// for it.
+func TestNamedProductSearchedOnItsOwn(t *testing.T) {
+	e := newEngine(t, []langPage{
+		{key: enCur, path: "security-center/Content/Storage.htm", title: "Storage Best Practices", products: []string{"Security Center"},
+			body: `<p>Best practices for rolling out storage.</p>`},
+		{key: enCur, path: "integrations/Tenable-Patch-Management/Content/best-practices.htm", title: "Best Practices for Tenable Patch Express",
+			products: []string{"Tenable Patch Management"}, body: `<p>Best practices for deploying patches.</p>`},
+	})
+	res, err := e.Search(ctx, Request{Query: "best practices for rolling out Tenable Patch Management"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Hits) == 0 || res.Hits[0].Product != "Tenable Patch Management" {
+		t.Fatalf("hits = %+v", res.Hits)
+	}
+	if !slices.ContainsFunc(res.Notes, func(n string) bool { return strings.Contains(n, "which the question names") }) {
+		t.Errorf("notes = %q", res.Notes)
+	}
+	// With a product filter, the caller has chosen; nothing is added.
+	res, err = e.Search(ctx, Request{Query: "best practices for rolling out", Product: "Security Center"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Hits) == 0 || res.Hits[0].Product != "Security Center" || len(res.Notes) != 0 {
+		t.Errorf("with a filter: %+v, notes %q", res.Hits, res.Notes)
+	}
+}

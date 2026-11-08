@@ -4,9 +4,8 @@
 # also searches with each of the others in its place, so pages using any of the
 # wordings match. A term can be a phrase. Matching ignores case.
 #
-# The pairs come from support-site searches that missed the docs' wording, and the
-# documentation team reviewed them. Users can add their own groups in synonyms.txt in
-# the settings folder (see the README).
+# Users can add their own groups in synonyms.txt in the settings folder (see the
+# README).
 
 whitelist, allowlist, allow list
 blacklist, blocklist, block list, deny list
