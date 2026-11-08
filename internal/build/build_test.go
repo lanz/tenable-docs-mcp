@@ -72,7 +72,7 @@ func TestRunIntoIndex(t *testing.T) {
 			return fmt.Errorf("setup page: %v %v", ok, err)
 		}
 		if strings.Join(info.TocTrail, " › ") != "Welcome to Widget Manager › Set Up Widgets" || info.Product != "Widget Manager" ||
-			info.GuideType != "User Guide" || info.LastMod != "2026-10-02" || info.LastModified == "" || len(info.Roles) != 1 {
+			info.GuideType != "User Guide" || info.LastMod != "2026-10-02" || info.LastModified != "" || len(info.Roles) != 1 {
 			t.Errorf("setup page = %+v", info)
 		}
 		if _, ok, _ := s.PageInfo(ctx, en+"secret/Content/Hidden.htm"); ok {
@@ -133,6 +133,32 @@ type countingSource struct {
 func (c *countingSource) Fetch(ctx context.Context, req site.Request) (*site.Response, error) {
 	c.urls = append(c.urls, req.URL)
 	return c.Source.Fetch(ctx, req)
+}
+
+// pageSink collects pages.
+type pageSink struct {
+	discardSink
+	pages []Page
+}
+
+func (p *pageSink) Page(_ context.Context, _ index.Key, pg Page) error {
+	p.pages = append(p.pages, pg)
+	return nil
+}
+
+func TestLiveKeepsLastModified(t *testing.T) {
+	src, sites := Source(t)
+	for _, live := range []bool{false, true} {
+		var sink pageSink
+		if _, err := Run(ctx, Options{Source: src, Sites: sites[:1], Live: live}, &sink); err != nil {
+			t.Fatal(err)
+		}
+		for _, p := range sink.pages {
+			if (p.LastModified != "") != live {
+				t.Errorf("live %v: %s last modified %q", live, p.Page.URL, p.LastModified)
+			}
+		}
+	}
 }
 
 type discardSink struct{}

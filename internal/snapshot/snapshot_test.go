@@ -166,6 +166,28 @@ func describe(t *testing.T, ix *index.Index, k index.Key) string {
 	return out
 }
 
+func TestUnchangedPagesUnchangedFiles(t *testing.T) {
+	_, first := writeSnapshot(t)
+	// A fresh clone gives every file a new modification time; the snapshot doesn't change.
+	later := time.Now().Add(time.Hour)
+	root := filepath.Join("..", "build", "testdata")
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		return os.Chtimes(p, later, later)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, second := writeSnapshot(t)
+	for i := range first.Shards {
+		if first.Shards[i].SHA256 != second.Shards[i].SHA256 {
+			t.Errorf("%s changed", first.Shards[i].Key)
+		}
+	}
+}
+
 func TestTampered(t *testing.T) {
 	dir, m := writeSnapshot(t)
 	s := m.Shards[0]

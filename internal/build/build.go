@@ -27,7 +27,8 @@ type Page struct {
 	Entry site.Entry `json:"entry"`
 	// Trail is the page's place in its guide's table of contents.
 	Trail []string `json:"trail,omitempty"`
-	// LastModified is the page's Last-Modified time, for conditional requests later.
+	// LastModified is the page's Last-Modified time from the live site, for conditional
+	// requests later. Builds from local copies leave it empty.
 	LastModified string `json:"last_modified,omitempty"`
 }
 
@@ -44,6 +45,10 @@ type Options struct {
 	Sites []site.Site
 	// Agent is the robots.txt user-agent token to follow rules for.
 	Agent string
+	// Live says the source is the live sites, whose Last-Modified times are worth keeping
+	// for conditional requests. A local copy's file times aren't the site's, so builds
+	// from one don't keep them, and a snapshot changes only when its pages do.
+	Live bool
 	// Progress, when set, is called after each page, with the site and how many of its
 	// sitemap's entries are done.
 	Progress func(siteCode string, done, total int)
@@ -102,7 +107,7 @@ func buildSite(ctx context.Context, opts Options, s site.Site, agent string, sin
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := buildPage(ctx, opts.Source, s, e, rules, tocs, sink, rep); err != nil {
+		if err := buildPage(ctx, opts.Source, opts.Live, s, e, rules, tocs, sink, rep); err != nil {
 			return err
 		}
 		if opts.Progress != nil {
@@ -125,7 +130,7 @@ func isPagePath(p string) bool {
 	return false
 }
 
-func buildPage(ctx context.Context, src site.Source, s site.Site, e site.Entry, rules *site.Robots,
+func buildPage(ctx context.Context, src site.Source, live bool, s site.Site, e site.Entry, rules *site.Robots,
 	tocs map[string][]*site.TocEntry, sink Sink, rep *Report) error {
 	u, err := url.Parse(e.URL)
 	if err != nil || site.OnSite(e.URL, s) == "" || !isPagePath(u.Path) {
@@ -172,7 +177,11 @@ func buildPage(ctx context.Context, src site.Source, s site.Site, e site.Entry, 
 			rep.Tocs++
 		}
 	}
-	if err := sink.Page(ctx, k, Page{Page: p, Entry: e, Trail: site.TocTrail(toc, e.URL), LastModified: resp.LastModified}); err != nil {
+	bp := Page{Page: p, Entry: e, Trail: site.TocTrail(toc, e.URL)}
+	if live {
+		bp.LastModified = resp.LastModified
+	}
+	if err := sink.Page(ctx, k, bp); err != nil {
 		return err
 	}
 	rep.Pages[k.String()]++
