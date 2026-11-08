@@ -12,6 +12,7 @@ For questions about Tenable's APIs, use the [Tenable Developer Portal MCP](https
 - [Features](#features)
 - [Install](#install)
 - [Connect it to an MCP client](#connect-it-to-an-mcp-client)
+- [The companion skill](#the-companion-skill)
 - [Tools](#tools)
 - [Prompts, resources, and completions](#prompts-resources-and-completions)
 - [How a question becomes a cited answer](#how-a-question-becomes-a-cited-answer)
@@ -179,6 +180,21 @@ The server listens at `http://127.0.0.1:8080/mcp`, with a health check at `/heal
 ```bash
 claude mcp add --transport http tenable-docs http://127.0.0.1:8080/mcp
 ```
+
+## The companion skill
+
+The server's own instructions tell an assistant to search before answering. [`skills/tenable-docs/SKILL.md`](skills/tenable-docs/SKILL.md) goes further: it's an [Agent Skill](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview) that teaches the assistant how to answer from the docs. It covers:
+
+- searching first, and rephrasing two or three times before saying the docs don't cover something
+- reading the section before answering, and choosing the specific tools (settings, roles, requirements, release notes, terms) when they fit
+- giving the documented steps in order, with the section's link and the required role
+- saying which product, version, and language an answer is for, and asking when that's ambiguous
+- checking the answer's links with `verify_citations` before sending it
+- offering `report_gap` when the docs don't answer, and the page's feedback form when a page looks wrong, with the user writing their own feedback
+- sending API questions to the [Tenable Developer Portal MCP](https://developer.tenable.com/mcp)
+- with the Tenable Hexa AI MCP connected, offering to do the task, and doing it only when the user says yes
+
+To install it in Claude Code, copy the `skills/tenable-docs` folder into `~/.claude/skills/` (every project) or `.claude/skills/` in a project. Claude Code loads it when a question is about a Tenable product. Clients that support Agent Skills from a ZIP file, such as Claude Desktop and claude.ai, take the folder zipped.
 
 ## Tools
 
