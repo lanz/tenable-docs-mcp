@@ -68,28 +68,36 @@ func TestEndToEnd(t *testing.T) {
 		return json.Unmarshal(raw, out)
 	}
 
-	sets := []string{"eval-en", "eval-en-holdout", "eval-versions", "eval-ja", "eval-fr", "eval-wording"}
+	sets := []string{"eval-en", "eval-en-holdout", "eval-versions", "eval-ja", "eval-fr", "eval-wording", "eval-common"}
 	for _, set := range sets {
 		data, err := os.ReadFile(filepath.Join("..", "..", "internal", "search", "testdata", set+".json"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		var cases []struct {
-			Q      string   `json:"q"`
-			Expect []string `json:"expect"`
+			Q       string   `json:"q"`
+			Expect  []string `json:"expect"`
+			Product string   `json:"product"`
 		}
 		if err := json.Unmarshal(data, &cases); err != nil {
 			t.Fatal(err)
 		}
-		top5, cited := 0, 0
+		top5, cited, scored := 0, 0, 0
 		for _, c := range cases {
+			if len(c.Expect) > 0 {
+				scored++
+			}
 			var sr struct {
 				Results []struct {
 					URL     string `json:"url"`
 					English string `json:"english_url"`
 				} `json:"results"`
 			}
-			if err := callTool("search_docs", map[string]any{"query": c.Q, "limit": 5}, &sr); err != nil {
+			args := map[string]any{"query": c.Q, "limit": 5}
+			if c.Product != "" {
+				args["product"] = c.Product
+			}
+			if err := callTool("search_docs", args, &sr); err != nil {
 				t.Fatal(err)
 			}
 			for _, r := range sr.Results {
@@ -115,7 +123,7 @@ func TestEndToEnd(t *testing.T) {
 				t.Errorf("%s: %q: read_doc gave no citation for %s", set, c.Q, sr.Results[0].URL)
 			}
 		}
-		t.Logf("%s: %d questions, expected page in the top five for %d, cited answers for %d", set, len(cases), top5, cited)
+		t.Logf("%s: %d questions (%d scored), expected page in the top five for %d, cited answers for %d", set, len(cases), scored, top5, cited)
 	}
 }
 
@@ -123,6 +131,7 @@ func expected(u string, patterns []string) bool {
 	_, path, _ := strings.Cut(strings.TrimPrefix(u, "https://"), "/")
 	path, _, _ = strings.Cut(path, "#")
 	for _, p := range patterns {
+		p, _, _ = strings.Cut(p, "#") // an expected section's page
 		if ok, _ := filepath.Match(p, path); ok {
 			return true
 		}

@@ -1,0 +1,9 @@
+[
+  {"q": "How do I set up credentialed checks on Windows?", "expect": ["nessus/Content/CredentialedChecksOnWindows.htm"]},
+  {"q": "Where do I see my cloud sensors?", "product": "Vulnerability Management", "expect": ["vulnerability-management/Content/Settings/Sensors/CloudSensors.htm"]},
+  {"q": "What are the best practices for rolling out Tenable Patch Management?", "expect": ["integrations/Tenable-Patch-Management/Content/express-ld/best-practices.htm", "integrations/Tenable-Patch-Management/Content/bus-rollout-proc.htm"], "note": "The rollout processes page gives best practices for rollouts too."},
+  {"q": "How do I report an unauthorized scan of my network?", "expect": [], "note": "No page covers it: the right answer says so. Search can't score that; the companion skill's behavior covers it."},
+  {"q": "What does paranoid mode do in a scan?", "expect": ["vulnerability-management/Content/Scans/AssessmentSettingsPreconfigured.htm", "nessus/Content/AssessmentSettingsPreconfigured.htm"]},
+  {"q": "How do I create a recast rule?", "expect": ["vulnerability-management/Content/recast/add-recast-rules.htm#CreateaRecastorAcceptRule", "vulnerability-management/Content/Explore/create-recast-rules.htm#CreateRecastRulesfromExplore"]},
+  {"q": "How do I manage user accounts?", "product": "Vulnerability Management", "expect": ["vulnerability-management/Content/Settings/access-control/Users.htm#ManageUserAccounts", "vulnerability-management/Content/Settings/access-control/manage-users.htm#ManageUserAccounts"], "note": "manage-users.htm has the same section on its own page."}
+]
