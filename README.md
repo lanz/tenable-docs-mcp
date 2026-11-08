@@ -170,7 +170,7 @@ Some tests can also run against a real index or the live sites. They're skipped 
 
 ## License
 
-[GPL-3.0-or-later](LICENSE). Copyright (C) 2026 Lance Duvall.
+[GPL-3.0-or-later](LICENSE). Copyright (C) 2026 [Lance Duvall](https://github.com/lanz).
 
 ## Disclaimer
 
