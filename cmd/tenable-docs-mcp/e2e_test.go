@@ -34,7 +34,10 @@ func TestEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	client := mcp.NewClient(&mcp.Implementation{Name: "e2e", Version: "0"}, nil)
-	cs, err := client.Connect(ctx, &mcp.CommandTransport{Command: exec.Command(bin, "serve", "-index", dir)}, nil)
+	cmd := exec.Command(bin, "serve", "-index", dir)
+	// Search the index as it is; don't update it from docs.tenable.com.
+	cmd.Env = append(os.Environ(), "TDM_INDEX_URL=off")
+	cs, err := client.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

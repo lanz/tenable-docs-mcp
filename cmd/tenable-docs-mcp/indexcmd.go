@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"slices"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/lanz/tenable-docs-mcp/internal/build"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
+	"github.com/lanz/tenable-docs-mcp/internal/official"
 	"github.com/lanz/tenable-docs-mcp/internal/server"
 	"github.com/lanz/tenable-docs-mcp/internal/site"
 	"github.com/lanz/tenable-docs-mcp/internal/snapshot"
@@ -24,6 +26,9 @@ import (
 )
 
 const indexUsage = `Usage:
+  %[1]s index pull [-sites en,jp] [-index DIR]
+        download the official index from docs.tenable.com, or update it: only shards
+        that changed are downloaded and rebuilt
   %[1]s index build -source "en=DIR;jp=DIR" [-sites en,jp] [-out DIR | -index DIR] [-json]
         read the docs from local copies of the sites (one folder per site, as the
         sites publish them) and write a snapshot to -out, or an index to -index
@@ -42,6 +47,8 @@ func indexCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return 2
 	}
 	switch args[0] {
+	case "pull":
+		return indexPull(ctx, args[1:], stdout, stderr)
 	case "build":
 		return indexBuild(ctx, args[1:], stdout, stderr)
 	case "import":
@@ -267,6 +274,90 @@ func indexImport(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	fmt.Fprintf(stdout, "Imported the snapshot built %s into the index in %s: %s.\n", m.BuiltAt, d, shardCounts(pages))
 	return 0
 }
+
+// officialUpdater returns the updater for the official snapshot, from $TDM_INDEX_URL
+// (default official.DefaultURL; "off" turns updates off, and gives nil) and a list of
+// site codes (default every site).
+func officialUpdater(ix *index.Index, siteList string) (*official.Updater, error) {
+	url := strings.TrimSpace(os.Getenv("TDM_INDEX_URL"))
+	if strings.EqualFold(url, "off") {
+		return nil, nil
+	}
+	if url == "" {
+		url = official.DefaultURL
+	}
+	if !strings.HasPrefix(url, "https://") {
+		return nil, fmt.Errorf("TDM_INDEX_URL must be an https:// address, or off: %q", url)
+	}
+	sites, err := pickSites(siteList, site.Sites)
+	if err != nil {
+		return nil, err
+	}
+	u := &official.Updater{URL: url, UserAgent: server.UserAgent(), Index: ix, Now: now}
+	if len(sites) < len(site.Sites) {
+		for _, s := range sites {
+			u.Sites = append(u.Sites, s.Code)
+		}
+	}
+	return u, nil
+}
+
+func indexPull(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet(server.Name+" index pull", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	sitesFlag := fs.String("sites", "", "only these sites, such as en,jp (default: $TDM_SITES, or every site)")
+	dir := fs.String("index", "", "the index folder (default: $TDM_INDEX_DIR, or the user's cache folder)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, indexUsage, server.Name)
+		return 2
+	}
+	d, err := indexDir(*dir)
+	if err != nil {
+		fmt.Fprintln(stderr, "index pull:", err)
+		return 1
+	}
+	ix, err := index.Open(d)
+	if err != nil {
+		fmt.Fprintln(stderr, "index pull:", err)
+		return 1
+	}
+	defer ix.Close()
+	list := *sitesFlag
+	if list == "" {
+		list = os.Getenv("TDM_SITES")
+	}
+	u, err := officialUpdater(ix, list)
+	if err != nil {
+		fmt.Fprintln(stderr, "index pull:", err)
+		return 2
+	}
+	if u == nil {
+		fmt.Fprintln(stderr, "index pull: TDM_INDEX_URL is off")
+		return 2
+	}
+	u.Client = pullClient
+	u.Progress = func(msg string) { fmt.Fprintln(stderr, msg) }
+	res, err := u.Update(ctx)
+	if err != nil {
+		fmt.Fprintln(stderr, "index pull:", err)
+		return 1
+	}
+	switch {
+	case len(res.Imported) == 0:
+		fmt.Fprintf(stdout, "The index in %s is up to date with the snapshot built %s.\n", d, res.BuiltAt)
+	default:
+		fmt.Fprintf(stdout, "Updated the index in %s from the snapshot built %s: rebuilt %s; %d unchanged; downloaded %.1f MB.\n",
+			d, res.BuiltAt, strings.Join(res.Imported, ", "), res.Unchanged, float64(res.Bytes)/(1<<20))
+	}
+	return 0
+}
+
+// pullClient makes index pull's requests; nil is the updater's default. Tests replace
+// it.
+var pullClient *http.Client
 
 func indexVerify(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {

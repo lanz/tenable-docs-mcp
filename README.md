@@ -2,7 +2,7 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server that answers questions from Tenable's product documentation, with a link to the exact section that supports each answer. It covers [docs.tenable.com](https://docs.tenable.com) and its seven translated sites, in every product, guide, and published version, and it runs locally as a single Go binary with an embedded SQLite index.
 
-> **Status: in progress toward 1.0.** The tools, prompts, resources, and completions described here work, but the prebuilt index they search isn't published yet, so a new install has nothing to search. There are no release binaries yet; build from source with Go 1.26 or later. Automatic index download and building a full index from the live sites are planned for 1.0 and don't exist today. Where this README describes 1.0 behavior, it says so.
+> **Status: in progress toward 1.0.** The tools, prompts, resources, and completions described here work, and the server downloads the official index from docs.tenable.com on first run and keeps it up to date. There are no release binaries yet; build from source with Go 1.26 or later. Building the index from the live sites, for when the official index can't be reached, is planned for 1.0 and doesn't exist today. Where this README describes 1.0 behavior, it says so.
 
 For questions about Tenable's APIs, use the [Tenable Developer Portal MCP](https://developer.tenable.com/mcp), which developer.tenable.com hosts. The two are complementary: this server covers the product documentation, and that one covers the API reference.
 
@@ -45,7 +45,7 @@ Tenable Docs MCP indexes that structure and exposes it through MCP tools, so an 
 - **Structured answers.** Dedicated tools read settings tables, requirements tables, required-role statements, release-note entries, and glossaries.
 - **Citation checking.** `verify_citations` (and the `verify-links` command) checks every docs link in an answer or a draft: the page exists, the anchor is on it, and whether the link points to an older version or a translation.
 - **Honest gaps.** When the docs don't answer a question, `report_gap` records it locally and, if the user chooses, sends it to Tenable's documentation team through a form the user approves.
-- **Local and private.** No telemetry, no network access at startup, and no network access at all unless a tool that needs it is called. See [Privacy and security](#privacy-and-security).
+- **Local and private.** No telemetry. The only routine network access is downloading the official index and checking it for updates once a day, which can be turned off. See [Privacy and security](#privacy-and-security).
 - **Single static binary.** Pure Go, including the SQLite driver ([modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)), so it builds with `CGO_ENABLED=0` for Linux, macOS, and Windows on amd64 and arm64.
 
 ## Install
@@ -69,12 +69,21 @@ A build from a Git clone reports a version from its commit, such as `v0.0.0-2026
 
 ### Getting an index
 
-The server starts without an index, and `index_status` reports `not built`; every search and reading tool then returns an error that says the index isn't built. Today, there are two ways to make one:
+There's nothing to set up. The first time the server starts, it downloads the official index snapshot from `https://docs.tenable.com/mcp/index/v1/` in the background and builds the local index from it: about 21,200 pages in 13 shards, 12 MB to download, and a local index of about 380 MB, in under a minute. Until it's done, `index_status` reports `downloading`, and the search and reading tools say the index is downloading.
 
-- `tenable-docs-mcp index import SNAPSHOT` builds the index from a snapshot folder on disk. The official snapshot isn't published yet; for 1.0, it's planned at `https://docs.tenable.com/mcp/index/v1/`, with the server downloading and verifying it on first run.
+After that, the server checks for an update once a day. Only shards whose files changed are downloaded and rebuilt, and each is swapped in whole, so searches keep working during an update. A failed check is retried an hour later, or after five minutes while the index is still empty. `index_status` shows when the index was last checked, when the snapshot was built, and the last error, if any.
+
+To download or update the index without starting the server, run `tenable-docs-mcp index pull`. Other ways to build it:
+
+- `tenable-docs-mcp index import SNAPSHOT` builds the index from a snapshot folder on disk.
 - `tenable-docs-mcp index build -source …` builds from local copies of the sites' published files, one folder per site. Most users won't have these.
 
-A full snapshot of all eight sites is about 21,200 pages in 13 shards, about 12 MB compressed. Importing it builds a local index of about 380 MB in under a minute.
+Two environment variables change the downloads:
+
+| Variable | Effect |
+| --- | --- |
+| `TDM_INDEX_URL` | `off` turns automatic downloads and updates off. Any other value is the `https://` address of a snapshot folder to use instead of the official one. |
+| `TDM_SITES` | Only download these sites, such as `en,jp` (default: all eight). `index pull -sites` does the same for one run. |
 
 ## Connect it to an MCP client
 
@@ -125,7 +134,7 @@ In `~/.cursor/mcp.json`, use the same `mcpServers` entry as Claude Desktop.
 
 Any MCP client that launches stdio servers works the same way. Over stdio, standard output carries only protocol messages, and diagnostics go to standard error.
 
-To use an index somewhere other than the default folder, pass it as arguments, or set `TDM_INDEX_DIR` in the server's environment:
+To use an index somewhere other than the default folder, pass it as arguments, or set `TDM_INDEX_DIR` in the server's environment. `TDM_INDEX_URL` and `TDM_SITES` (see [Getting an index](#getting-an-index)) go in the same `env` block:
 
 ```json
 {
@@ -186,7 +195,7 @@ The server registers 16 tools. Each returns structured output (with a JSON schem
 | `verify_citations` | Checks every docs link in an answer or draft (Markdown, HTML, or plain text, up to 200,000 characters). See [Citations and verify_citations](#citations-and-verify_citations). | Only with `check_live` |
 | `report_gap` | Records a question the docs didn't answer in a local file only the user can read. If the client can show forms, it then offers the user a form to send the question to Tenable's documentation team. | Only if the user accepts the form |
 | `open_feedback_form` | Shows the user a feedback form for a docs page. The assistant chooses only the page and whether the user found it helpful; the user writes the comment, and there's no argument for one. | Only if the user accepts the form |
-| `index_status` | The server's version, Go version, index folder, and each shard's pages, sections, schema version, build time, and last-indexed time. | No |
+| `index_status` | The server's version, Go version, index folder, and each shard's pages, sections, schema version, build time, and last-indexed time; and the automatic updates: where they come from, the last check, when the snapshot was built, any update in progress, and the last error. | No |
 | `refresh_index` | Updates given pages (up to 500), or every page of a guide and its table of contents, from the live sites. Reports checked, updated, unchanged, removed, and skipped pages, with progress notifications when the client asks for them. | Yes |
 
 ## Prompts, resources, and completions
@@ -352,11 +361,16 @@ For documentation writers, `verify-links` also checks draft topics: `-base` give
 The index is a folder of SQLite databases, one per site and version set:
 
 ```text
-en-current.db    en-older.db
-jp-current.db    jp-older.db
+en-current.4.db    en-older.4.db
+jp-current.4.db    jp-older.4.db
 ...
-es-current.db    es-older.db
+es-current.4.db
+snapshot/          official.json
 ```
+
+Each time a shard is rebuilt, the new build gets the next number, and the server switches to it. More than one MCP client can run the server on the same folder, so no process replaces a file another one has open (which Windows doesn't allow). The others switch to the new build within a minute, and older builds are deleted once nothing has them open. An index written before builds were numbered has `en-current.db` and so on, and it opens as it is. Only one process updates a folder at a time; it holds `update.lock` while it does.
+
+`snapshot/` holds the downloaded snapshot files and their manifest, so a shard can be rebuilt without downloading it again. `official.json` records the last update check, so every process using the folder knows when the next one is due. Each shard records the checksum of the snapshot file it was built from, which is how an update tells which shards changed.
 
 A shard is created only when there are pages for it; a full build has 13. Each shard records its key and tokenizer in a `meta` table and its schema version in `PRAGMA user_version` (currently 2). Opening a shard written by a newer build, or a file that holds a different shard or tokenizer, fails with an error instead of returning wrong results. Shards run in WAL mode.
 
@@ -413,7 +427,7 @@ The manifest lists every shard:
 
 (The values above are illustrative.)
 
-Before importing, `index import` checks that the manifest's format is one it reads, that each shard's site is known, and that each file name matches its key and checksum. It then verifies each file's size and SHA-256 before decompressing it, caps decompression memory at 512 MiB, checks that every page belongs to the shard it's in, and checks the page count against the manifest. `index verify` runs the size and checksum checks alone.
+Before importing, `index import` and `index pull` check that the manifest's format is one it reads, that each shard's site is known, and that each file name matches its key and checksum. It then verifies each file's size and SHA-256 before decompressing it, caps decompression memory at 512 MiB, checks that every page belongs to the shard it's in, and checks the page count against the manifest. `index verify` runs the size and checksum checks alone.
 
 ## Command line
 
@@ -425,6 +439,7 @@ Before importing, `index import` checks that the manifest's format is one it rea
 | `tenable-docs-mcp gaps export [-since YYYY-MM-DD] [-json] [-file FILE]` | Summarize the recorded questions, grouped by product, as Markdown or JSON |
 | `tenable-docs-mcp gaps clear -yes [-file FILE]` | Delete the recorded questions |
 | `tenable-docs-mcp gaps path` | Print where the questions are recorded |
+| `tenable-docs-mcp index pull [-sites en,jp] [-index DIR]` | Download the official index, or update it; only shards that changed are downloaded and rebuilt |
 | `tenable-docs-mcp index import [-sites en,jp] [-index DIR] SNAPSHOT` | Verify a snapshot folder and build the index from it |
 | `tenable-docs-mcp index verify SNAPSHOT` | Check a snapshot's files against its manifest |
 | `tenable-docs-mcp index build -source SITES [-sites en,jp] [-out DIR \| -index DIR] [-json]` | Build a snapshot (`-out`) or an index (`-index`) from local copies of the sites |
@@ -435,18 +450,19 @@ Before importing, `index import` checks that the manifest's format is one it rea
 
 The index folder is, in order: the `-index` flag, `$TDM_INDEX_DIR`, or `tenable-docs-mcp/index` in the user cache folder.
 
-`verify-links` exits with 1 when any link is broken, and with 2 on a usage or input error. `index build` exits with 1 when any page fails.
+`verify-links` exits with 1 when any link is broken, and with 2 on a usage or input error. `index build` exits with 1 when any page fails. `index pull` exits with 1 when the download or the build fails, leaving the index as it was.
 
 ## Privacy and security
 
 ### No telemetry
 
-The server never reports how it's used. It makes no network requests at startup, and none at all unless one of the features in the next table is used.
+The server never reports how it's used. Downloading the official index and checking it for updates once a day are its only routine requests: they send nothing but the user agent and, so the CDN doesn't serve a stale manifest, the current time as a query string. `TDM_INDEX_URL=off` turns them off. Every other request comes from a feature in the next table.
 
 ### Hosts it connects to
 
 | Host | When | Why |
 | --- | --- | --- |
+| `docs.tenable.com` | When the server starts with an empty index, once a day after that, and `index pull` | Download the official index from `/mcp/index/v1/`: the manifest, then only the shard files that changed |
 | `docs.tenable.com`, `jp.docs.tenable.com`, `zh-cn.docs.tenable.com`, `zh-tw.docs.tenable.com`, `kr.docs.tenable.com`, `fr.docs.tenable.com`, `de.docs.tenable.com`, `es.docs.tenable.com` | `refresh_index`; `verify_citations` with `check_live`; `verify-links -live` | Fetch pages, tables of contents, and `robots.txt` |
 | `www.tenable.com` | Only when the user accepts a feedback or gap form | Send the feedback, through the same endpoint the feedback form on each docs page uses |
 
@@ -455,6 +471,7 @@ Every other host is refused, including redirects to other hosts and redirects fr
 ### Limits on traffic to the docs sites
 
 - At most 4 requests in flight and 5 started per second.
+- Index downloads: one update check a day, one file at a time, and only the files that changed.
 - `robots.txt` rules for the `tenable-docs-mcp` token (or `*`), following RFC 9309.
 - Conditional requests for pages already in the index.
 - Up to 3 retries on rate limits, server errors, and network errors, honoring `Retry-After` up to 60 seconds and otherwise backing off exponentially to at most 30 seconds.
@@ -468,7 +485,7 @@ Only feedback or a gap report that the user writes, or approves, in a form their
 
 | Data | Location | Permissions |
 | --- | --- | --- |
-| The index | `tenable-docs-mcp/index` in the user cache folder (`~/.cache` on Linux, `~/Library/Caches` on macOS, `%LocalAppData%` on Windows), or `$TDM_INDEX_DIR` | Folder `0700`, new shard files `0600` |
+| The index, with the downloaded snapshot in its `snapshot` folder | `tenable-docs-mcp/index` in the user cache folder (`~/.cache` on Linux, `~/Library/Caches` on macOS, `%LocalAppData%` on Windows), or `$TDM_INDEX_DIR` | Folders `0700`, new files `0600` |
 | Questions recorded with `report_gap` | `tenable-docs-mcp/gaps.jsonl` in the user settings folder (`~/.config` on Linux, `~/Library/Application Support` on macOS, `%AppData%` on Windows) | Folder `0700`, file `0600` |
 | A log of feedback sent, which also counts the rate limits | `tenable-docs-mcp/feedback.jsonl` in the user settings folder | Folder `0700`, file `0600` |
 

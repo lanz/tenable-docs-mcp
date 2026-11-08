@@ -63,6 +63,13 @@ func buildIndexFrom(t *testing.T, pages []fixturePage) *index.Index {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { ix.Close() })
+	fillIndex(t, ix, pages)
+	return ix
+}
+
+// fillIndex builds made-up pages into ix's shards, as buildIndexFrom does.
+func fillIndex(t *testing.T, ix *index.Index, pages []fixturePage) {
+	t.Helper()
 	byKey := map[index.Key][]fixturePage{}
 	for _, p := range pages {
 		byKey[p.key] = append(byKey[p.key], p)
@@ -103,7 +110,6 @@ func buildIndexFrom(t *testing.T, pages []fixturePage) *index.Index {
 			t.Fatal(err)
 		}
 	}
-	return ix
 }
 
 func connect(t *testing.T, ix *index.Index) *mcp.ClientSession {

@@ -58,6 +58,8 @@ func TestServeHTTPStopsOnCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	var out, errOut bytes.Buffer
 	done := make(chan int, 1)
+	// Not the user's own index.
+	t.Setenv("TDM_INDEX_DIR", t.TempDir())
 	go func() { done <- run(ctx, []string{"serve", "-http", "127.0.0.1:0"}, &out, &errOut) }()
 	cancel()
 	if code := <-done; code != 0 {
