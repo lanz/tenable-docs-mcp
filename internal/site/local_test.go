@@ -102,7 +102,12 @@ func TestParseSiteDirs(t *testing.T) {
 	if err != nil || len(got) != 2 || got["en"] != filepath.Join("a", "en") || got["jp"] != filepath.Join("b", "jp") {
 		t.Errorf("ParseSiteDirs = %v, %v", got, err)
 	}
-	for _, bad := range []string{"en", "=dir", "en=", "en=a" + sep + "en=b"} {
+	// Semicolons work on every platform, so scripts and docs can use one form.
+	got, err = ParseSiteDirs("en=" + filepath.Join("a", "en") + ";jp=" + filepath.Join("b", "jp"))
+	if err != nil || len(got) != 2 || got["jp"] != filepath.Join("b", "jp") {
+		t.Errorf("with semicolons = %v, %v", got, err)
+	}
+	for _, bad := range []string{"en", "=dir", "en=", "en=a" + sep + "en=b", "en=a;en=b"} {
 		if _, err := ParseSiteDirs(bad); err == nil {
 			t.Errorf("ParseSiteDirs(%q): no error", bad)
 		}

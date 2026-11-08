@@ -46,12 +46,16 @@ func NewLocal(dirs map[string]string) (*LocalSource, error) {
 	return ls, nil
 }
 
-// ParseSiteDirs reads site folders written as code=folder pairs separated by the
-// operating system's list separator (";" on Windows, ":" elsewhere), as in
-// "en=/data/docs:jp=/data/docs-jp".
+// ParseSiteDirs reads site folders written as code=folder pairs separated by
+// semicolons on every platform, as in "en=/data/docs;jp=/data/docs-jp", or by the
+// operating system's list separator (":" on Linux and macOS).
 func ParseSiteDirs(v string) (map[string]string, error) {
 	dirs := map[string]string{}
-	for _, pair := range filepath.SplitList(v) {
+	var pairs []string
+	for _, part := range strings.Split(v, ";") {
+		pairs = append(pairs, filepath.SplitList(part)...)
+	}
+	for _, pair := range pairs {
 		pair = strings.TrimSpace(pair)
 		if pair == "" {
 			continue
