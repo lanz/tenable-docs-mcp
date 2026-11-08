@@ -14,7 +14,14 @@
 //	                                       from the index in DIR
 //	tenable-docs-mcp verify-links [-base URL] [-live] FILE...
 //	                                       check the docs links in answers or draft topics
-//	tenable-docs-mcp gaps export|clear     summarize or clear the questions report_gap recorded
+//	tenable-docs-mcp search|read|outline|browse|related|products|setting|role|
+//	                 requirements|release-notes|term|status
+//	                                       run a tool from a terminal
+//	tenable-docs-mcp doctor                check the index, the network, and the setup
+//	tenable-docs-mcp config                print settings for MCP clients
+//	tenable-docs-mcp gaps export|submit|clear
+//	                                       summarize, send, or clear the questions
+//	                                       report_gap recorded
 //	tenable-docs-mcp index pull|crawl|build|import|verify
 //	                                       download or update the published index, or
 //	                                       build or update it from the live sites; build
@@ -59,12 +66,40 @@ const usage = `Usage:
                                          from the documentation index in DIR (default:
                                          $TDM_INDEX_DIR, or tenable-docs-mcp/index in the
                                          user's cache folder)
+
+The tools, from a terminal (each takes -index DIR, and -json for the tool's
+structured output; -h lists a command's flags; exits 1 when nothing is found):
+  tenable-docs-mcp search QUESTION       search the docs, as search_docs does
+  tenable-docs-mcp read URL              read a section or page, as read_doc does
+  tenable-docs-mcp outline URL           a page's headings, or with -guide a guide's pages
+  tenable-docs-mcp browse GUIDE          a guide's table of contents, as browse_guide does
+  tenable-docs-mcp related URL           the pages around a page, as related_pages does
+  tenable-docs-mcp products              the products and languages in the index
+  tenable-docs-mcp setting SETTING       explain a setting, as find_setting does
+  tenable-docs-mcp role TASK             the role a task needs, as required_role does
+  tenable-docs-mcp requirements QUESTION system requirements, ports, and the like
+  tenable-docs-mcp release-notes [WORDS] release-note entries, newest first
+  tenable-docs-mcp term TERM             define a term or product name, as define_term does
+  tenable-docs-mcp status                the version and what the index holds; exits 1 if
+                                         the index isn't ready
+
+Checks, setup, and recorded questions:
+  tenable-docs-mcp doctor [-index DIR]   check the index, the network, and this program's
+                                         path; exits 1 if a check fails
+  tenable-docs-mcp config [-client NAME] [-index DIR]
+                                         print settings for Claude Code, Claude Desktop,
+                                         VS Code, and Cursor, ready to paste
   tenable-docs-mcp verify-links [-base URL] [-live] [-json] FILE...
                                          check the docs links in answers or draft topics
                                          (- reads standard input); exits 1 if any is broken
   tenable-docs-mcp gaps export [-since DATE] [-json]
                                          summarize the questions the docs didn't answer
+  tenable-docs-mcp gaps submit [-since DATE]
+                                         send recorded questions to Tenable's documentation
+                                         team, asking about each one first
   tenable-docs-mcp gaps clear -yes       delete the recorded questions
+
+The index:
   tenable-docs-mcp index build -source "en=DIR;jp=DIR" [-sites en,jp] [-out DIR | -index DIR]
                                          build the index, or a snapshot of it, from local
                                          copies of the sites
@@ -113,7 +148,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	case "help":
 		fmt.Fprint(stdout, usage)
 		return 0
+	case "doctor":
+		return doctor(ctx, rest, stdout, stderr)
+	case "config":
+		return configCmd(rest, stdout, stderr)
 	default:
+		if c, ok := findToolCommand(cmd); ok {
+			return runTool(ctx, c, rest, stdout, stderr)
+		}
 		fmt.Fprintf(stderr, "%s: unknown command %q\n\n%s", server.Name, cmd, usage)
 		return 2
 	}
