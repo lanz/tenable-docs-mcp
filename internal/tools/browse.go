@@ -242,6 +242,7 @@ func registerBrowse(s *mcp.Server, env *Env) {
 		pageURL, _, _ := strings.Cut(u, "#")
 		var out relatedOut
 		err = env.withPage(ctx, pageURL, func(sh *index.Shard, info *index.PageInfo) error {
+			pageURL = info.URL // the page found, which may be where a redirect led
 			out = relatedOut{URL: pageURL, Title: info.Title, Product: info.Product}
 			var err error
 			if out.Previous, out.Next, err = tocNeighbors(ctx, sh, info); err != nil {

@@ -8,6 +8,7 @@ package server
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lanz/tenable-docs-mcp/internal/crawl"
 	"github.com/lanz/tenable-docs-mcp/internal/feedback"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
 	"github.com/lanz/tenable-docs-mcp/internal/published"
@@ -51,6 +52,9 @@ type Options struct {
 	// Updates keeps the index up to date from the published snapshot; nil means
 	// automatic updates are off. New connects it to the tools; run it afterward.
 	Updates *published.Watcher
+	// OnDemand adds pages the index doesn't have from the live sites as the reading
+	// tools ask for them; nil turns that off, as hosted mode does.
+	OnDemand *crawl.OnDemand
 }
 
 // New returns the MCP server with every tool, resource, and prompt registered.
@@ -59,6 +63,9 @@ func New(opts Options) *mcp.Server {
 	env.Live = opts.Live
 	if !opts.Hosted {
 		env.GapsFile, env.AllowRefresh, env.Feedback = opts.GapsFile, true, opts.Feedback
+		if opts.OnDemand != nil {
+			env.FetchPage = opts.OnDemand.Page
+		}
 	}
 	s := mcp.NewServer(
 		&mcp.Implementation{Name: Name, Title: "Tenable Docs MCP", Version: version.Get(), WebsiteURL: ProjectURL},

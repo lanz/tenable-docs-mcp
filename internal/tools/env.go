@@ -15,6 +15,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lanz/tenable-docs-mcp/internal/crawl"
 	"github.com/lanz/tenable-docs-mcp/internal/feedback"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
 	"github.com/lanz/tenable-docs-mcp/internal/page"
@@ -38,6 +39,10 @@ type Env struct {
 	AllowRefresh bool
 	// Feedback sends open_feedback_form's feedback; nil turns it off (as in hosted mode).
 	Feedback *feedback.Sender
+	// FetchPage fetches a page the index doesn't have from its live site, stores it,
+	// and returns the address it's stored at (where it moved, if it redirects); nil
+	// turns that off. It returns crawl.ErrNotPage for a URL that isn't a page.
+	FetchPage func(ctx context.Context, pageURL string) (string, error)
 	// Updates reports the automatic updates from the published snapshot; nil means
 	// they're off.
 	Updates func() published.Status
@@ -86,7 +91,7 @@ func (e *Env) ready() error {
 		st := e.Updates()
 		switch {
 		case st.Updating:
-			return fmt.Errorf("the documentation index is downloading for the first time (%s); try again in a minute", lowerFirst(st.Step))
+			return fmt.Errorf("the documentation index is being built for the first time (%s); try again in a few minutes", lowerFirst(st.Step))
 		case st.LastError != "":
 			return fmt.Errorf("the documentation index isn't built: downloading it from docs.tenable.com failed (%s). "+
 				"The download is tried again every few minutes; index_status shows its state", st.LastError)
@@ -139,16 +144,50 @@ func (e *Env) withPage(ctx context.Context, pageURL string, fn func(*index.Shard
 	if e.Index.Shard(k) == nil {
 		return fmt.Errorf("the index has no %s documentation, so it can't show %s", k, pageURL)
 	}
-	return e.Index.With(k, func(s *index.Shard) error {
-		info, ok, err := s.PageInfo(ctx, pageURL)
-		if err != nil {
+	found, err := e.lookupPage(ctx, k, pageURL, fn)
+	if found || err != nil {
+		return err
+	}
+	// The page may have moved: a crawl of the live sites records redirects.
+	var moved string
+	_ = e.Index.With(k, func(s *index.Shard) error {
+		moved, _, _ = s.Redirect(ctx, pageURL)
+		return nil
+	})
+	if mk, ok := index.KeyFor(moved); ok && e.Index.Shard(mk) != nil {
+		if found, err := e.lookupPage(ctx, mk, moved, fn); found || err != nil {
 			return err
 		}
-		if !ok {
-			return fmt.Errorf("%s isn't in the index: it may have moved or been removed, or not be a page; find it with search_docs", pageURL)
+	}
+	// It may be new since the index was updated: fetch it from the live site. This
+	// runs outside the shard's read lock, since storing the page writes to the index.
+	if e.FetchPage != nil {
+		stored, ferr := e.FetchPage(ctx, pageURL)
+		if ferr == nil {
+			if sk, ok := index.KeyFor(stored); ok {
+				if found, err := e.lookupPage(ctx, sk, stored, fn); found || err != nil {
+					return err
+				}
+			}
+		} else if !errors.Is(ferr, crawl.ErrNotPage) {
+			return fmt.Errorf("%s isn't in the index, and fetching it from the live site failed: %w", pageURL, ferr)
 		}
+	}
+	return fmt.Errorf("%s isn't in the index: it may have moved or been removed, or not be a page; find it with search_docs", pageURL)
+}
+
+// lookupPage runs fn with a page the shard has, and reports whether it had it.
+func (e *Env) lookupPage(ctx context.Context, k index.Key, pageURL string, fn func(*index.Shard, *index.PageInfo) error) (bool, error) {
+	found := false
+	err := e.Index.With(k, func(s *index.Shard) error {
+		info, ok, err := s.PageInfo(ctx, pageURL)
+		if err != nil || !ok {
+			return err
+		}
+		found = true
 		return fn(s, info)
 	})
+	return found, err
 }
 
 // Links between versions and languages, as the tools show them.

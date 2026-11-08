@@ -15,8 +15,9 @@
 //	tenable-docs-mcp verify-links [-base URL] [-live] FILE...
 //	                                       check the docs links in answers or draft topics
 //	tenable-docs-mcp gaps export|clear     summarize or clear the questions report_gap recorded
-//	tenable-docs-mcp index pull|build|import|verify
-//	                                       download or update the published index; build
+//	tenable-docs-mcp index pull|crawl|build|import|verify
+//	                                       download or update the published index, or
+//	                                       build or update it from the live sites; build
 //	                                       the index, or a snapshot of it, from local
 //	                                       copies of the sites; import or check a snapshot
 //	tenable-docs-mcp version               print the version
@@ -38,6 +39,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lanz/tenable-docs-mcp/internal/crawl"
 	"github.com/lanz/tenable-docs-mcp/internal/feedback"
 	"github.com/lanz/tenable-docs-mcp/internal/gaps"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
@@ -66,6 +68,8 @@ const usage = `Usage:
                                          copies of the sites
   tenable-docs-mcp index pull [-sites en,jp] [-index DIR]
                                          download the published index, or update it
+  tenable-docs-mcp index crawl [-sites en,jp] [-index DIR]
+                                         build or update the index from the live sites
   tenable-docs-mcp index import [-sites en,jp] [-index DIR] SNAPSHOT
                                          build the index from a snapshot
   tenable-docs-mcp index verify SNAPSHOT check a snapshot against its manifest
@@ -139,13 +143,24 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	} else {
 		sender = &feedback.Sender{Endpoint: feedback.Endpoint, UserAgent: server.UserAgent(), LogFile: logFile}
 	}
-	opts := server.Options{Index: ix, Live: site.NewHTTP(site.HTTPConfig{UserAgent: server.UserAgent()}), GapsFile: gapsFile, Feedback: sender}
+	live := site.NewHTTP(site.HTTPConfig{UserAgent: server.UserAgent()})
+	opts := server.Options{Index: ix, Live: live, GapsFile: gapsFile, Feedback: sender}
 	if ix != nil {
-		if u, err := publishedUpdater(ix, os.Getenv("TDM_SITES")); err != nil {
+		u, err := publishedUpdater(ix, os.Getenv("TDM_SITES"))
+		if err != nil {
 			fmt.Fprintln(stderr, server.Name+": TDM_INDEX_URL or TDM_SITES:", err)
 			return 2
-		} else if u != nil {
-			opts.Updates = &published.Watcher{Updater: u, Log: func(msg string) { fmt.Fprintln(stderr, server.Name+": "+msg) }}
+		}
+		c, err := liveCrawler(ix, live, os.Getenv("TDM_SITES"))
+		if err != nil {
+			fmt.Fprintln(stderr, server.Name+": TDM_CRAWL or TDM_SITES:", err)
+			return 2
+		}
+		if u != nil {
+			opts.Updates = &published.Watcher{Updater: u, Crawler: c, Log: func(msg string) { fmt.Fprintln(stderr, server.Name+": "+msg) }}
+		}
+		if c != nil {
+			opts.OnDemand = &crawl.OnDemand{Crawler: c}
 		}
 	}
 	srv := server.New(opts)

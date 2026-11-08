@@ -14,6 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lanz/tenable-docs-mcp/internal/index"
+	"github.com/lanz/tenable-docs-mcp/internal/published"
 )
 
 // Info describes the running server, for index_status.
@@ -51,6 +52,10 @@ type updatesState struct {
 	SnapshotBuiltAt string `json:"snapshot_built_at,omitempty" jsonschema:"when the published snapshot that check found was built"`
 	LastError       string `json:"last_error,omitempty" jsonschema:"why the last check failed, if it did"`
 	ErrorAt         string `json:"error_at,omitempty"`
+	// From is where the index was last updated from.
+	From       string `json:"from,omitempty" jsonschema:"where the index was last updated from: published (the snapshot on docs.tenable.com) or live (the live sites, crawled because the snapshot couldn't be reached)"`
+	CrawledAt  string `json:"crawled_at,omitempty" jsonschema:"when the last crawl of the live sites finished"`
+	CrawlError string `json:"crawl_error,omitempty" jsonschema:"why the last crawl of the live sites failed, if it did"`
 }
 
 type statusOut struct {
@@ -104,14 +109,16 @@ func (e *Env) status(ctx context.Context) (statusOut, string, error) {
 	if e.Updates != nil {
 		st := e.Updates()
 		out.Updates = updatesState{On: true, Source: st.URL, Updating: st.Updating, Step: st.Step, CheckedAt: st.CheckedAt,
-			SnapshotBuiltAt: st.BuiltAt, LastError: st.LastError, ErrorAt: st.ErrorAt}
+			SnapshotBuiltAt: st.BuiltAt, LastError: st.LastError, ErrorAt: st.ErrorAt,
+			From: st.Source, CrawledAt: st.CrawledAt, CrawlError: st.CrawlError}
 	}
 	switch {
 	case len(out.Index.Shards) > 0:
 		out.Index.State = "ready"
 	case out.Updates.Updating:
 		out.Index.State = "downloading"
-		out.Note = "The documentation index is downloading for the first time; the search and reading tools work once it's done, in a minute or two."
+		out.Note = "The documentation index is being built for the first time; the search and reading tools work once it's done. " +
+			"Downloading it takes a minute or two; reading the live sites instead, when the download fails, takes about an hour."
 	case out.Updates.LastError != "":
 		out.Note = "The documentation index isn't built yet: downloading it failed, and the download is tried again every few minutes."
 	case out.Updates.On:
@@ -142,6 +149,12 @@ func (e *Env) status(ctx context.Context) (statusOut, string, error) {
 		}
 		if u.LastError != "" {
 			fmt.Fprintf(&b, "\nThe last check failed at %s: %s", u.ErrorAt, u.LastError)
+		}
+		if u.From == published.SourceLive {
+			fmt.Fprintf(&b, "\nSince the published snapshot couldn't be reached, the index is kept up to date from the live sites; last read %s.", u.CrawledAt)
+		}
+		if u.CrawlError != "" {
+			fmt.Fprintf(&b, "\nThe last read of the live sites failed: %s", u.CrawlError)
 		}
 	}
 	if out.Note != "" {
