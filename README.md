@@ -146,7 +146,7 @@ Downloaded index files are checked against their SHA-256 checksums before they'r
 
 ## How it works
 
-The docs sites are built with MadCap Flare. Their content is parsed into sections that keep each heading's anchor, along with the page's product, guide type, version, and language. Each page also gets its place in its guide's table of contents, and the roles, settings, requirements, and release notes it describes.
+Each docs page is parsed into sections that keep each heading's anchor, along with the page's product, guide type, version, and language. Each page also gets its place in its guide's table of contents, and the roles, settings, requirements, and release notes it describes.
 
 The index is a set of SQLite databases with full-text search, one for each language's current and older-version pages. Each language gets the right kind of matching: stemming for English, accent folding for French, German, and Spanish, and trigrams for Japanese, Chinese, and Korean, which don't put spaces between words. Ranking prefers the guides that suit the question, such as release notes for "what's new" and requirements pages for ports.
 
@@ -170,7 +170,9 @@ Some tests can also run against a real index or the live sites. They're skipped 
 
 ## License
 
-[GPL-3.0-or-later](LICENSE). Copyright (C) 2026 Lance Duvall.
+Copyright (C) 2026 [Lance Duvall](https://github.com/lanz).
+
+Licensed under the [GNU General Public License v3.0](LICENSE) or later.
 
 ## Disclaimer
 
