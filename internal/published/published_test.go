@@ -2,7 +2,7 @@
 // Project: <https://github.com/lanz/tenable-docs-mcp>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package official
+package published
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/lanz/tenable-docs-mcp/internal/build"
+	"github.com/lanz/tenable-docs-mcp/internal/crawl"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
 	"github.com/lanz/tenable-docs-mcp/internal/site"
 	"github.com/lanz/tenable-docs-mcp/internal/snapshot"
@@ -437,14 +438,14 @@ func TestOneUpdateAtATime(t *testing.T) {
 	dir, _ := makeSnapshot(t, "")
 	s := newServer(t, dir)
 	ix := openIndex(t)
-	unlock, err := lock(ix.Dir, clock)
+	l, err := Lock(ix.Dir, clock)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := updater(s, ix).Update(ctx); !errors.Is(err, ErrBusy) {
 		t.Errorf("err = %v", err)
 	}
-	unlock()
+	l.Release()
 	// A lock left by a process that stopped long ago is taken over.
 	path := filepath.Join(ix.Dir, lockFile)
 	if err := os.WriteFile(path, []byte("1 old\n"), 0o600); err != nil {
@@ -532,5 +533,105 @@ func TestWatcherReloads(t *testing.T) {
 	}
 	if reqs := s.got(); len(reqs) != 0 {
 		t.Errorf("b made requests: %v", reqs)
+	}
+}
+
+// countingSource counts what a crawl fetches.
+type countingSource struct {
+	site.Source
+	mu sync.Mutex
+	n  int
+}
+
+func (c *countingSource) Fetch(ctx context.Context, req site.Request) (*site.Response, error) {
+	c.mu.Lock()
+	c.n++
+	c.mu.Unlock()
+	return c.Source.Fetch(ctx, req)
+}
+
+func (c *countingSource) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	n := c.n
+	c.n = 0
+	return n
+}
+
+// While the published snapshot can't be reached, the watcher crawls the live sites;
+// once it's back, the snapshot replaces what was crawled.
+func TestWatcherFallsBackToCrawling(t *testing.T) {
+	dir, m := makeSnapshot(t, "")
+	s := newServer(t, dir)
+	down := true
+	s.fault = func(w http.ResponseWriter, r *http.Request, n int) bool {
+		if down {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		}
+		return down
+	}
+	enDir, _ := filepath.Abs(filepath.Join("..", "build", "testdata", "en"))
+	jpDir, _ := filepath.Abs(filepath.Join("..", "build", "testdata", "jp"))
+	local, err := site.NewLocal(map[string]string{"en": enDir, "jp": jpDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := &countingSource{Source: local}
+	ix := openIndex(t)
+	now := clock
+	u := updater(s, ix)
+	u.Now = func() time.Time { return now }
+	w := &Watcher{Updater: u, Crawler: &crawl.Crawler{Index: ix, Source: src, Sites: local.Sites(), Now: u.Now}}
+	changed := 0
+	w.OnChange = func() { changed++ }
+
+	w.Tick(ctx)
+	if got := keys(ix); len(got) != len(m.Shards) {
+		t.Fatalf("after the crawl: shards %v", got)
+	}
+	st := w.Status()
+	if st.Source != SourceLive || st.CrawledAt == "" || st.LastError == "" || changed != 1 {
+		t.Errorf("status = %+v; changed %d", st, changed)
+	}
+
+	// An hour later the snapshot is still down; the crawl isn't due again yet.
+	now = now.Add(RetryAfter + time.Minute)
+	src.count()
+	w.Tick(ctx)
+	if n := src.count(); n != 0 {
+		t.Errorf("crawled again after an hour: %d requests", n)
+	}
+
+	// The snapshot is back: it replaces the crawled shards.
+	down = false
+	now = now.Add(RetryAfter + time.Minute)
+	w.Tick(ctx)
+	st = w.Status()
+	if st.Source != SourcePublished || st.LastError != "" || changed != 2 {
+		t.Errorf("status after the snapshot came back = %+v; changed %d", st, changed)
+	}
+	if n := src.count(); n != 0 {
+		t.Errorf("crawled with the snapshot back: %d requests", n)
+	}
+}
+
+func TestCrawlDue(t *testing.T) {
+	at := func(d time.Duration) string { return clock.Add(-d).Format(time.RFC3339) }
+	for _, c := range []struct {
+		name  string
+		st    State
+		empty bool
+		want  bool
+	}{
+		{"never crawled", State{}, false, true},
+		{"empty index", State{CrawledAt: at(time.Minute)}, true, true},
+		{"crawled today", State{CrawledAt: at(time.Hour)}, false, false},
+		{"crawled yesterday", State{CrawledAt: at(25 * time.Hour)}, false, true},
+		{"crawl failed recently", State{CrawlErrorAt: at(10 * time.Minute)}, true, false},
+		{"crawl failed an hour ago", State{CrawlErrorAt: at(61 * time.Minute)}, true, true},
+	} {
+		if got := CrawlDue(c.st, c.empty, clock); got != c.want {
+			t.Errorf("%s: CrawlDue = %v", c.name, got)
+		}
 	}
 }

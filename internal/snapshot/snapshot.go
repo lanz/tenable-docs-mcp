@@ -2,7 +2,7 @@
 // Project: <https://github.com/lanz/tenable-docs-mcp>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Package snapshot writes and reads the official index's content snapshot: the parsed
+// Package snapshot writes and reads the published index's content snapshot: the parsed
 // pages and tables of contents of each shard, which clients download and index locally.
 //
 // A snapshot is a folder with one zstd-compressed JSON Lines file per shard and a

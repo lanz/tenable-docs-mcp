@@ -17,8 +17,9 @@ import (
 	"time"
 
 	"github.com/lanz/tenable-docs-mcp/internal/build"
+	"github.com/lanz/tenable-docs-mcp/internal/crawl"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
-	"github.com/lanz/tenable-docs-mcp/internal/official"
+	"github.com/lanz/tenable-docs-mcp/internal/published"
 	"github.com/lanz/tenable-docs-mcp/internal/server"
 	"github.com/lanz/tenable-docs-mcp/internal/site"
 	"github.com/lanz/tenable-docs-mcp/internal/snapshot"
@@ -27,8 +28,12 @@ import (
 
 const indexUsage = `Usage:
   %[1]s index pull [-sites en,jp] [-index DIR]
-        download the official index from docs.tenable.com, or update it: only shards
+        download the published index from docs.tenable.com, or update it: only shards
         that changed are downloaded and rebuilt
+  %[1]s index crawl [-sites en,jp] [-index DIR]
+        build or update the index from the live sites instead: a site the index has
+        nothing for is read in full (all eight take about an hour); after that, only
+        what changed is fetched
   %[1]s index build -source "en=DIR;jp=DIR" [-sites en,jp] [-out DIR | -index DIR] [-json]
         read the docs from local copies of the sites (one folder per site, as the
         sites publish them) and write a snapshot to -out, or an index to -index
@@ -49,6 +54,8 @@ func indexCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	switch args[0] {
 	case "pull":
 		return indexPull(ctx, args[1:], stdout, stderr)
+	case "crawl":
+		return indexCrawl(ctx, args[1:], stdout, stderr)
 	case "build":
 		return indexBuild(ctx, args[1:], stdout, stderr)
 	case "import":
@@ -275,16 +282,16 @@ func indexImport(ctx context.Context, args []string, stdout, stderr io.Writer) i
 	return 0
 }
 
-// officialUpdater returns the updater for the official snapshot, from $TDM_INDEX_URL
-// (default official.DefaultURL; "off" turns updates off, and gives nil) and a list of
+// publishedUpdater returns the updater for the published snapshot, from $TDM_INDEX_URL
+// (default published.DefaultURL; "off" turns updates off, and gives nil) and a list of
 // site codes (default every site).
-func officialUpdater(ix *index.Index, siteList string) (*official.Updater, error) {
+func publishedUpdater(ix *index.Index, siteList string) (*published.Updater, error) {
 	url := strings.TrimSpace(os.Getenv("TDM_INDEX_URL"))
 	if strings.EqualFold(url, "off") {
 		return nil, nil
 	}
 	if url == "" {
-		url = official.DefaultURL
+		url = published.DefaultURL
 	}
 	if !strings.HasPrefix(url, "https://") {
 		return nil, fmt.Errorf("TDM_INDEX_URL must be an https:// address, or off: %q", url)
@@ -293,13 +300,30 @@ func officialUpdater(ix *index.Index, siteList string) (*official.Updater, error
 	if err != nil {
 		return nil, err
 	}
-	u := &official.Updater{URL: url, UserAgent: server.UserAgent(), Index: ix, Now: now}
+	u := &published.Updater{URL: url, UserAgent: server.UserAgent(), Index: ix, Now: now}
 	if len(sites) < len(site.Sites) {
 		for _, s := range sites {
 			u.Sites = append(u.Sites, s.Code)
 		}
 	}
 	return u, nil
+}
+
+// liveCrawler returns the crawler that keeps the index up to date from the live sites
+// when the published snapshot can't be reached, and adds pages on demand; $TDM_CRAWL
+// set to off turns both off, and gives nil.
+func liveCrawler(ix *index.Index, live site.Source, siteList string) (*crawl.Crawler, error) {
+	switch v := strings.TrimSpace(os.Getenv("TDM_CRAWL")); {
+	case strings.EqualFold(v, "off"):
+		return nil, nil
+	case v != "" && !strings.EqualFold(v, "on"):
+		return nil, fmt.Errorf("TDM_CRAWL must be on or off: %q", v)
+	}
+	sites, err := pickSites(siteList, site.Sites)
+	if err != nil {
+		return nil, err
+	}
+	return &crawl.Crawler{Index: ix, Source: live, Agent: server.Name, Sites: sites, Now: now}, nil
 }
 
 func indexPull(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -329,7 +353,7 @@ func indexPull(ctx context.Context, args []string, stdout, stderr io.Writer) int
 	if list == "" {
 		list = os.Getenv("TDM_SITES")
 	}
-	u, err := officialUpdater(ix, list)
+	u, err := publishedUpdater(ix, list)
 	if err != nil {
 		fmt.Fprintln(stderr, "index pull:", err)
 		return 2
@@ -358,6 +382,76 @@ func indexPull(ctx context.Context, args []string, stdout, stderr io.Writer) int
 // pullClient makes index pull's requests; nil is the updater's default. Tests replace
 // it.
 var pullClient *http.Client
+
+// crawlSource is what index crawl reads from; nil is the live sites. Tests replace it.
+var crawlSource site.Source
+
+func indexCrawl(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet(server.Name+" index crawl", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	sitesFlag := fs.String("sites", "", "only these sites, such as en,jp (default: $TDM_SITES, or every site)")
+	dir := fs.String("index", "", "the index folder (default: $TDM_INDEX_DIR, or the user's cache folder)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, indexUsage, server.Name)
+		return 2
+	}
+	list := *sitesFlag
+	if list == "" {
+		list = os.Getenv("TDM_SITES")
+	}
+	sites, err := pickSites(list, site.Sites)
+	if err != nil {
+		fmt.Fprintln(stderr, "index crawl:", err)
+		return 2
+	}
+	d, err := indexDir(*dir)
+	if err != nil {
+		fmt.Fprintln(stderr, "index crawl:", err)
+		return 1
+	}
+	ix, err := index.Open(d)
+	if err != nil {
+		fmt.Fprintln(stderr, "index crawl:", err)
+		return 1
+	}
+	defer ix.Close()
+	src := crawlSource
+	if src == nil {
+		src = site.NewHTTP(site.HTTPConfig{UserAgent: server.UserAgent()})
+	}
+	l, err := published.Lock(d, now())
+	if err != nil {
+		fmt.Fprintln(stderr, "index crawl:", err)
+		return 1
+	}
+	defer l.Release()
+	c := &crawl.Crawler{Index: ix, Source: src, Agent: server.Name, Sites: sites, Now: now,
+		Progress: func(msg string) { l.Touch(); fmt.Fprintln(stderr, msg) }}
+	rep, err := c.Sync(ctx)
+	for _, f := range rep.Failed {
+		fmt.Fprintln(stdout, "Failed:", f)
+	}
+	if err != nil {
+		fmt.Fprintln(stderr, "index crawl:", err)
+		return 1
+	}
+	st, _ := published.ReadState(d)
+	st.CrawledAt, st.CrawlError, st.CrawlErrorAt, st.Source = now().UTC().Format(time.RFC3339), "", "", published.SourceLive
+	_ = published.WriteState(d, st)
+	built := ""
+	if len(rep.Built) > 0 {
+		built = "; read in full: " + strings.Join(rep.Built, ", ")
+	}
+	fmt.Fprintf(stdout, "Updated the index in %s from the live sites: %d pages checked, %d added, %d updated, %d unchanged, %d removed, %d redirected%s.\n",
+		d, rep.Checked, rep.Added, rep.Updated, rep.Unchanged, rep.Removed, rep.Redirected, built)
+	if len(rep.Failed) > 0 {
+		return 1
+	}
+	return 0
+}
 
 func indexVerify(args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {

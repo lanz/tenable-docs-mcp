@@ -118,6 +118,7 @@ func registerRead(s *mcp.Server, env *Env) {
 			pageURL, _, _ := strings.Cut(u, "#")
 			var out outlineOut
 			err = env.withPage(ctx, pageURL, func(sh *index.Shard, info *index.PageInfo) error {
+				pageURL = info.URL // the page found, which may be where a redirect led
 				sections, err := sh.Sections(ctx, pageURL)
 				if err != nil {
 					return err
@@ -149,6 +150,7 @@ func (e *Env) read(ctx context.Context, u string, part, maxChars int) (readOut, 
 	pageURL, anchor, _ := strings.Cut(u, "#")
 	var out readOut
 	err := e.withPage(ctx, pageURL, func(sh *index.Shard, info *index.PageInfo) error {
+		pageURL = info.URL // the page found, which may be where a redirect led
 		sections, err := sh.Sections(ctx, pageURL)
 		if err != nil {
 			return err

@@ -2,13 +2,16 @@
 // Project: <https://github.com/lanz/tenable-docs-mcp>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-package official
+package published
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
+
+	"github.com/lanz/tenable-docs-mcp/internal/crawl"
 )
 
 // How often the watcher does what it does.
@@ -32,6 +35,9 @@ type Watcher struct {
 	// OnChange, when set, is called after the index changes: an update rebuilt
 	// shards, or the index switched to builds another process installed.
 	OnChange func()
+	// Crawler, when set, keeps the index up to date from the live sites while the
+	// published snapshot can't be reached; nil turns that fallback off.
+	Crawler *crawl.Crawler
 
 	mu       sync.Mutex
 	updating bool
@@ -86,35 +92,111 @@ func (w *Watcher) Tick(ctx context.Context) {
 	if !Due(st, len(u.Index.Keys()) == 0, u.now()) {
 		return
 	}
-	w.mu.Lock()
-	w.updating, w.step = true, "Checking for an updated index"
-	w.mu.Unlock()
+	w.begin("Checking for an updated index")
 	prev := u.Progress
 	u.Progress = func(msg string) {
-		w.mu.Lock()
-		w.step = msg
-		w.mu.Unlock()
-		w.log(msg)
+		w.setStep(msg)
 		if prev != nil {
 			prev(msg)
 		}
 	}
 	res, err := u.Update(ctx)
 	u.Progress = prev
-	w.mu.Lock()
-	w.updating, w.step = false, ""
-	w.mu.Unlock()
+	w.end()
 	switch {
 	case errors.Is(err, ErrBusy):
 		// The other process's build is picked up on a later tick.
 	case err != nil:
 		if ctx.Err() == nil {
 			w.log("updating the index: " + err.Error())
+			w.fallBack(ctx)
 		}
 	case len(res.Imported) > 0:
 		w.log("updated the index from the snapshot built " + res.BuiltAt)
 		w.changed()
 	}
+}
+
+func (w *Watcher) begin(step string) {
+	w.mu.Lock()
+	w.updating, w.step = true, step
+	w.mu.Unlock()
+}
+
+func (w *Watcher) setStep(step string) {
+	w.mu.Lock()
+	w.step = step
+	w.mu.Unlock()
+	w.log(step)
+}
+
+func (w *Watcher) end() {
+	w.mu.Lock()
+	w.updating, w.step = false, ""
+	w.mu.Unlock()
+}
+
+// fallBack crawls the live sites, after the published snapshot couldn't be reached,
+// when a crawl is due.
+func (w *Watcher) fallBack(ctx context.Context) {
+	c, u := w.Crawler, w.Updater
+	if c == nil {
+		return
+	}
+	st, _ := ReadState(u.Index.Dir)
+	if !CrawlDue(st, len(u.Index.Keys()) == 0, u.now()) {
+		return
+	}
+	l, err := Lock(u.Index.Dir, u.now())
+	if err != nil {
+		return // another process is updating
+	}
+	defer l.Release()
+	w.begin("Reading the live docs sites instead")
+	prev := c.Progress
+	c.Progress = func(msg string) {
+		l.Touch()
+		w.setStep(msg)
+		if prev != nil {
+			prev(msg)
+		}
+	}
+	rep, err := c.Sync(ctx)
+	c.Progress = prev
+	w.end()
+	if ctx.Err() != nil {
+		return
+	}
+	st, _ = ReadState(u.Index.Dir)
+	at := u.now().UTC().Format(time.RFC3339)
+	if err != nil {
+		st.CrawlError, st.CrawlErrorAt = err.Error(), at
+		w.log("reading the live sites: " + err.Error())
+	} else {
+		st.CrawledAt, st.CrawlError, st.CrawlErrorAt, st.Source = at, "", "", SourceLive
+		w.log(fmt.Sprintf("updated the index from the live sites: %d pages added, %d updated, %d removed; %d failed",
+			rep.Added, rep.Updated, rep.Removed, len(rep.Failed)))
+	}
+	_ = WriteState(u.Index.Dir, st)
+	if rep.Changed() > 0 || len(rep.Built) > 0 {
+		w.changed()
+	}
+}
+
+// CrawlDue reports whether a crawl is due, once the published snapshot couldn't be
+// reached: CheckEvery after the last one finished, and RetryAfter after one failed.
+// An empty index is crawled right away.
+func CrawlDue(st State, empty bool, now time.Time) bool {
+	if st.CrawlErrorAt != "" {
+		if t, err := time.Parse(time.RFC3339, st.CrawlErrorAt); err == nil && now.Sub(t) < RetryAfter {
+			return false
+		}
+	}
+	if empty || st.CrawledAt == "" {
+		return true
+	}
+	t, err := time.Parse(time.RFC3339, st.CrawledAt)
+	return err != nil || now.Sub(t) >= CheckEvery
 }
 
 func (w *Watcher) changed() {

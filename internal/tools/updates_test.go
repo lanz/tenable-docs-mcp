@@ -12,8 +12,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lanz/tenable-docs-mcp/internal/crawl"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
-	"github.com/lanz/tenable-docs-mcp/internal/official"
+	"github.com/lanz/tenable-docs-mcp/internal/published"
 )
 
 func emptyIndex(t *testing.T) *index.Index {
@@ -27,13 +28,13 @@ func emptyIndex(t *testing.T) *index.Index {
 }
 
 func TestStatusAndErrorsWhileDownloading(t *testing.T) {
-	var st official.Status
+	var st published.Status
 	env := NewEnv(Info{Name: "tenable-docs-mcp", Version: "test"}, emptyIndex(t))
-	env.Updates = func() official.Status { return st }
+	env.Updates = func() published.Status { return st }
 	cs := connectEnv(t, env)
-	src := official.DefaultURL
+	src := published.DefaultURL
 
-	st = official.Status{State: official.State{URL: src}, Updating: true, Step: "Downloading en-current-abc.jsonl.zst (5.0 MB)"}
+	st = published.Status{State: published.State{URL: src}, Updating: true, Step: "Downloading en-current-abc.jsonl.zst (5.0 MB)"}
 	var out statusOut
 	text := call(t, cs, "index_status", nil, &out)
 	if out.Index.State != "downloading" || !out.Updates.On || !out.Updates.Updating || out.Updates.Source != src {
@@ -43,11 +44,11 @@ func TestStatusAndErrorsWhileDownloading(t *testing.T) {
 		t.Errorf("summary = %q", text)
 	}
 	msg, isErr := callRaw(t, cs, "search_docs", map[string]any{"query": "install nessus"}, nil)
-	if !isErr || !strings.Contains(msg, "downloading for the first time (downloading en-current") {
+	if !isErr || !strings.Contains(msg, "being built for the first time (downloading en-current") {
 		t.Errorf("search while downloading: %v %q", isErr, msg)
 	}
 
-	st = official.Status{State: official.State{URL: src, LastError: "manifest: HTTP 503", ErrorAt: "2026-11-08T12:00:00Z"}}
+	st = published.Status{State: published.State{URL: src, LastError: "manifest: HTTP 503", ErrorAt: "2026-11-08T12:00:00Z"}}
 	out = statusOut{}
 	text = call(t, cs, "index_status", nil, &out)
 	if out.Index.State != "not built" || out.Updates.LastError != "manifest: HTTP 503" || !strings.Contains(out.Note, "tried again") {
@@ -73,8 +74,8 @@ func TestStatusWithUpdatesOff(t *testing.T) {
 
 func TestStatusWhenReady(t *testing.T) {
 	env := NewEnv(Info{Name: "tenable-docs-mcp", Version: "test"}, buildIndex(t))
-	env.Updates = func() official.Status {
-		return official.Status{State: official.State{URL: official.DefaultURL, CheckedAt: "2026-11-08T12:00:00Z", BuiltAt: "2026-11-08T05:47:43Z"}}
+	env.Updates = func() published.Status {
+		return published.Status{State: published.State{URL: published.DefaultURL, CheckedAt: "2026-11-08T12:00:00Z", BuiltAt: "2026-11-08T05:47:43Z"}}
 	}
 	var out statusOut
 	text := call(t, connectEnv(t, env), "index_status", nil, &out)
@@ -139,5 +140,63 @@ func TestGuidesRegisteredAfterUpdate(t *testing.T) {
 	RegisterGuides(s, env)
 	if got := tocs(); len(got) != 0 {
 		t.Errorf("after the guide went: %v", got)
+	}
+}
+
+// read_doc reads a page that's new since the index was updated by fetching it from
+// the live site, and follows a redirect a crawl recorded.
+func TestReadDocOnDemandAndRedirects(t *testing.T) {
+	ix := buildIndex(t)
+	fresh := en + "nessus/Content/Fresh.htm"
+	live := liveSite{fresh: `<html lang="en-us"><head><title>Fresh page</title></head><body><div id="mc-main-content"><h1>Fresh page</h1><p>Published this morning.</p></div></body></html>`}
+	env := NewEnv(Info{Name: "tenable-docs-mcp", Version: "test"}, ix)
+	env.FetchPage = (&crawl.OnDemand{Crawler: &crawl.Crawler{Index: ix, Source: live}}).Page
+	cs := connectEnv(t, env)
+
+	var out readOut
+	call(t, cs, "read_doc", map[string]any{"url": fresh}, &out)
+	if out.Title != "Fresh page" || !strings.Contains(out.Markdown, "Published this morning.") {
+		t.Errorf("on-demand page = %+v", out)
+	}
+	// It's in the index now, for searches too.
+	if _, ok, _ := ix.Shard(index.Key{Site: "en"}).PageInfo(ctx, fresh); !ok {
+		t.Error("the fetched page wasn't stored")
+	}
+
+	// A page the live site doesn't have either.
+	msg, isErr := callRaw(t, cs, "read_doc", map[string]any{"url": en + "nessus/Content/Nowhere.htm"}, nil)
+	if !isErr || !strings.Contains(msg, "isn't in the index") {
+		t.Errorf("missing page: %v %q", isErr, msg)
+	}
+
+	// A recorded redirect, with fetching off.
+	old := en + "nessus/Content/InstallOld.htm"
+	err := ix.With(index.Key{Site: "en"}, func(sh *index.Shard) error {
+		return sh.Update(ctx, func(tx *index.Tx) error { return tx.PutRedirect(old, en+"nessus/Content/Install.htm") })
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.FetchPage = nil
+	out = readOut{}
+	call(t, cs, "read_doc", map[string]any{"url": old}, &out)
+	if !strings.HasPrefix(out.URL, en+"nessus/Content/Install.htm") {
+		t.Errorf("redirected read = %+v", out)
+	}
+}
+
+func TestStatusWhenCrawling(t *testing.T) {
+	env := NewEnv(Info{Name: "tenable-docs-mcp", Version: "test"}, buildIndex(t))
+	env.Updates = func() published.Status {
+		return published.Status{State: published.State{URL: published.DefaultURL, LastError: "manifest: HTTP 403", ErrorAt: "2026-11-08T12:00:00Z",
+			Source: published.SourceLive, CrawledAt: "2026-11-08T12:05:00Z"}}
+	}
+	var out statusOut
+	text := call(t, connectEnv(t, env), "index_status", nil, &out)
+	if out.Updates.From != "live" || out.Updates.CrawledAt != "2026-11-08T12:05:00Z" {
+		t.Errorf("status = %+v", out.Updates)
+	}
+	if !strings.Contains(text, "kept up to date from the live sites; last read 2026-11-08T12:05:00Z") {
+		t.Errorf("summary = %q", text)
 	}
 }

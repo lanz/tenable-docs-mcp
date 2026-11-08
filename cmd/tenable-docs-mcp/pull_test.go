@@ -10,10 +10,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/lanz/tenable-docs-mcp/internal/published"
+	"github.com/lanz/tenable-docs-mcp/internal/site"
 )
 
 // serveSnapshot builds the made-up sites into a snapshot and serves it over HTTPS,
-// as docs.tenable.com serves the official one, for index pull to download.
+// as docs.tenable.com serves the published one, for index pull to download.
 func serveSnapshot(t *testing.T) string {
 	t.Helper()
 	snap := filepath.Join(t.TempDir(), "snapshot")
@@ -95,6 +98,44 @@ func TestServeRejectsBadIndexURL(t *testing.T) {
 	t.Setenv("TDM_INDEX_DIR", t.TempDir())
 	t.Setenv("TDM_INDEX_URL", "ftp://example.com/")
 	if code, _, errOut := runCmd("serve"); code != 2 || !strings.Contains(errOut, "TDM_INDEX_URL") {
+		t.Errorf("serve: %d %q", code, errOut)
+	}
+}
+
+func TestIndexCrawl(t *testing.T) {
+	enDir, _ := filepath.Abs(filepath.Join("..", "..", "internal", "build", "testdata", "en"))
+	jpDir, _ := filepath.Abs(filepath.Join("..", "..", "internal", "build", "testdata", "jp"))
+	src, err := site.NewLocal(map[string]string{"en": enDir, "jp": jpDir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	crawlSource = src
+	t.Cleanup(func() { crawlSource = nil })
+	dir := filepath.Join(t.TempDir(), "index")
+	code, out, errOut := runCmd("index", "crawl", "-sites", "en,jp", "-index", dir)
+	if code != 0 || !strings.Contains(out, "read in full: en-current, en-older") || !strings.Contains(errOut, "Reading docs.tenable.com in full") {
+		t.Fatalf("first crawl: %d %q %q", code, out, errOut)
+	}
+	if got := shardsIn(t, dir); got != "en-current en-older jp-current" {
+		t.Errorf("shards = %q", got)
+	}
+	code, out, _ = runCmd("index", "crawl", "-sites", "en,jp", "-index", dir)
+	if code != 0 || !strings.Contains(out, "0 added, 0 updated") || strings.Contains(out, "read in full") {
+		t.Errorf("second crawl: %d %q", code, out)
+	}
+	st, err := published.ReadState(dir)
+	if err != nil || st.Source != published.SourceLive || st.CrawledAt == "" {
+		t.Errorf("state = %+v, %v", st, err)
+	}
+	if code, _, errOut := runCmd("index", "crawl", "-sites", "xx", "-index", dir); code != 2 || !strings.Contains(errOut, `no site "xx"`) {
+		t.Errorf("bad site: %d %q", code, errOut)
+	}
+}
+
+func TestServeRejectsBadCrawlSetting(t *testing.T) {
+	t.Setenv("TDM_INDEX_DIR", t.TempDir())
+	t.Setenv("TDM_CRAWL", "sometimes")
+	if code, _, errOut := runCmd("serve"); code != 2 || !strings.Contains(errOut, "TDM_CRAWL must be on or off") {
 		t.Errorf("serve: %d %q", code, errOut)
 	}
 }

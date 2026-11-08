@@ -2,7 +2,7 @@
 // Project: <https://github.com/lanz/tenable-docs-mcp>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// Package official downloads the official index snapshot from docs.tenable.com and
+// Package published downloads the index snapshot published on docs.tenable.com and
 // builds the local index from it, then keeps it up to date.
 //
 // An update reads the snapshot's manifest, downloads only the shard files whose
@@ -15,7 +15,7 @@
 // manifest is requested with a query string the CDN hasn't cached. Publishing keeps
 // old shard files for days, so even an old manifest's files can be found; if one is
 // missing anyway, the update reads the manifest again once.
-package official
+package published
 
 import (
 	"context"
@@ -38,7 +38,7 @@ import (
 	"github.com/lanz/tenable-docs-mcp/internal/snapshot"
 )
 
-// DefaultURL is where the official snapshot is published.
+// DefaultURL is where the snapshot is published.
 const DefaultURL = "https://docs.tenable.com/mcp/index/v1/"
 
 // SnapshotDir is the index folder's subfolder that holds the downloaded snapshot.
@@ -57,7 +57,7 @@ const (
 // ErrBusy is returned when another process is updating the same index.
 var ErrBusy = errors.New("another tenable-docs-mcp is updating this index")
 
-// Updater updates an index from the official snapshot.
+// Updater updates an index from the published snapshot.
 type Updater struct {
 	// URL is the snapshot's folder, ending in a slash (default DefaultURL).
 	URL string
@@ -126,14 +126,14 @@ type errMissing struct{ file string }
 
 func (e errMissing) Error() string { return e.file + " isn't on the server" }
 
-// Update brings the index up to date with the official snapshot, and records the
+// Update brings the index up to date with the published snapshot, and records the
 // check in the index folder's state file, whether it succeeds or not.
 func (u *Updater) Update(ctx context.Context) (Result, error) {
-	unlock, err := lock(u.Index.Dir, u.now())
+	l, err := Lock(u.Index.Dir, u.now())
 	if err != nil {
 		return Result{}, err
 	}
-	defer unlock()
+	defer l.Release()
 	res, err := u.update(ctx)
 	var me errMissing
 	if errors.As(err, &me) {
@@ -151,6 +151,7 @@ func (u *Updater) Update(ctx context.Context) (Result, error) {
 		return res, err
 	}
 	st.CheckedAt, st.BuiltAt, st.LastError, st.ErrorAt = u.now().UTC().Format(time.RFC3339), res.BuiltAt, "", ""
+	st.Source = SourcePublished
 	return res, WriteState(u.Index.Dir, st)
 }
 
@@ -363,7 +364,7 @@ func writeFileAtomic(path string, data []byte) error {
 }
 
 // StateFile is the index folder's record of the last update check.
-const StateFile = "official.json"
+const StateFile = "updates.json"
 
 // State records the last update check, so every process using the index folder
 // knows when the next one is due.
@@ -377,7 +378,22 @@ type State struct {
 	// LastError is why the last check failed, if it did, and ErrorAt is when.
 	LastError string `json:"last_error,omitempty"`
 	ErrorAt   string `json:"error_at,omitempty"`
+	// Source is where the index was last updated from: SourcePublished, or
+	// SourceLive when the published snapshot couldn't be reached and the live sites
+	// were crawled instead.
+	Source string `json:"source,omitempty"`
+	// CrawledAt is when the last crawl of the live sites finished; CrawlError and
+	// CrawlErrorAt are why and when the last one failed, if it did.
+	CrawledAt    string `json:"crawled_at,omitempty"`
+	CrawlError   string `json:"crawl_error,omitempty"`
+	CrawlErrorAt string `json:"crawl_error_at,omitempty"`
 }
+
+// Where the index was last updated from.
+const (
+	SourcePublished = "published"
+	SourceLive      = "live"
+)
 
 // ReadState reads the index folder's state file; a missing one is the zero State.
 func ReadState(dir string) (State, error) {
@@ -408,16 +424,23 @@ const lockFile = "update.lock"
 // that stopped; an update takes a minute or two.
 const staleLock = time.Hour
 
-// lock takes the index folder's update lock, so only one process updates it at a
-// time, and returns the function that releases it.
-func lock(dir string, now time.Time) (func(), error) {
+// IndexLock is the index folder's update lock, held while one process updates it.
+type IndexLock struct {
+	path    string
+	touched time.Time
+}
+
+// Lock takes the index folder's update lock, so only one process updates it at a time.
+// A lock file older than an hour is taken to be left by a process that stopped; a
+// long update keeps its lock fresh with Touch.
+func Lock(dir string, now time.Time) (*IndexLock, error) {
 	path := filepath.Join(dir, lockFile)
 	for range 2 {
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
 			fmt.Fprintf(f, "%d %s\n", os.Getpid(), now.UTC().Format(time.RFC3339))
 			f.Close()
-			return func() { os.Remove(path) }, nil
+			return &IndexLock{path: path, touched: time.Now()}, nil
 		}
 		if !errors.Is(err, os.ErrExist) {
 			return nil, err
@@ -431,3 +454,15 @@ func lock(dir string, now time.Time) (func(), error) {
 	}
 	return nil, ErrBusy
 }
+
+// Touch marks the lock as still held, at most once a minute.
+func (l *IndexLock) Touch() {
+	if time.Since(l.touched) < time.Minute {
+		return
+	}
+	l.touched = time.Now()
+	_ = os.Chtimes(l.path, l.touched, l.touched)
+}
+
+// Release gives up the lock.
+func (l *IndexLock) Release() { _ = os.Remove(l.path) }

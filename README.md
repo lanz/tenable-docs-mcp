@@ -2,7 +2,7 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server that answers questions from Tenable's product documentation, with a link to the exact section that supports each answer. It covers [docs.tenable.com](https://docs.tenable.com) and its seven translated sites, in every product, guide, and published version, and it runs locally as a single Go binary with an embedded SQLite index.
 
-> **Status: in progress toward 1.0.** The tools, prompts, resources, and completions described here work, and the server downloads the official index from docs.tenable.com on first run and keeps it up to date. There are no release binaries yet; build from source with Go 1.26 or later. Building the index from the live sites, for when the official index can't be reached, is planned for 1.0 and doesn't exist today. Where this README describes 1.0 behavior, it says so.
+> **Status: in progress toward 1.0.** The tools, prompts, resources, and completions described here work, and the server downloads the prebuilt index from docs.tenable.com on first run and keeps it up to date. When the prebuilt index can't be reached, it reads the live sites instead. There are no release binaries yet; build from source with Go 1.26 or later. Where this README describes 1.0 behavior, it says so.
 
 For questions about Tenable's APIs, use the [Tenable Developer Portal MCP](https://developer.tenable.com/mcp), which developer.tenable.com hosts. The two are complementary: this server covers the product documentation, and that one covers the API reference.
 
@@ -45,7 +45,7 @@ Tenable Docs MCP indexes that structure and exposes it through MCP tools, so an 
 - **Structured answers.** Dedicated tools read settings tables, requirements tables, required-role statements, release-note entries, and glossaries.
 - **Citation checking.** `verify_citations` (and the `verify-links` command) checks every docs link in an answer or a draft: the page exists, the anchor is on it, and whether the link points to an older version or a translation.
 - **Honest gaps.** When the docs don't answer a question, `report_gap` records it locally and, if the user chooses, sends it to Tenable's documentation team through a form the user approves.
-- **Local and private.** No telemetry. The only routine network access is downloading the official index and checking it for updates once a day, which can be turned off. See [Privacy and security](#privacy-and-security).
+- **Local and private.** No telemetry. The only routine network access is downloading the prebuilt index and checking it for updates once a day, or reading the docs sites when it can't be reached; both can be turned off. See [Privacy and security](#privacy-and-security).
 - **Single static binary.** Pure Go, including the SQLite driver ([modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)), so it builds with `CGO_ENABLED=0` for Linux, macOS, and Windows on amd64 and arm64.
 
 ## Install
@@ -69,21 +69,40 @@ A build from a Git clone reports a version from its commit, such as `v0.0.0-2026
 
 ### Getting an index
 
-There's nothing to set up. The first time the server starts, it downloads the official index snapshot from `https://docs.tenable.com/mcp/index/v1/` in the background and builds the local index from it: about 21,200 pages in 13 shards, 12 MB to download, and a local index of about 380 MB, in under a minute. Until it's done, `index_status` reports `downloading`, and the search and reading tools say the index is downloading.
+There's nothing to set up. The first time the server starts, it downloads the prebuilt index snapshot from `https://docs.tenable.com/mcp/index/v1/` in the background and builds the local index from it: about 21,200 pages in 13 shards, 12 MB to download, and a local index of about 380 MB, in under a minute. Until it's done, `index_status` reports `downloading`, and the search and reading tools say the index is downloading.
 
 After that, the server checks for an update once a day. Only shards whose files changed are downloaded and rebuilt, and each is swapped in whole, so searches keep working during an update. A failed check is retried an hour later, or after five minutes while the index is still empty. `index_status` shows when the index was last checked, when the snapshot was built, and the last error, if any.
 
-To download or update the index without starting the server, run `tenable-docs-mcp index pull`. Other ways to build it:
+To download or update the index without starting the server, run `tenable-docs-mcp index pull`.
+
+#### When the prebuilt index can't be reached
+
+If a check for an update fails, for example because a proxy blocks the download or a newer snapshot format needs a newer version of the server, the server reads the live docs sites instead, at most once a day, and keeps going until the prebuilt index can be downloaded again. Then it replaces what it read.
+
+- **A site the index has nothing for** is read in full, as the snapshot is built: its sitemap, `robots.txt`, every page, and each guide's table of contents. It's built beside the index and swapped in when it's done. At the polite request rate (see [Limits on traffic](#limits-on-traffic-to-the-docs-sites)), all eight sites take about an hour, and Spanish alone under a minute.
+- **After that, each read compares the sitemap with the index.** It fetches pages that are new or whose sitemap date changed, and removes pages the sitemap no longer lists or `robots.txt` now disallows. Sitemap dates can lag behind the pages, so it also checks a seventh of the other pages with conditional requests, which cost a `304` when nothing changed; over a week, every page is checked. For all eight sites, that's about 3,000 requests a day, which take about 10 minutes.
+- **A page that redirects** is recorded, so a link to its old address finds the new one. A sitemap entry that isn't a page is remembered, and fetched again only when its sitemap date changes.
+- **A sitemap that leaves out more than a fifth of a site's pages** looks broken, so nothing is removed, and the read reports it.
+- The index's change history records what each read added, updated, and removed.
+
+`index_status` says when the index is kept up to date from the live sites, and when it was last read. `tenable-docs-mcp index crawl` does the same from the command line, and builds an index from the live sites without the prebuilt one.
+
+#### Pages that are new since the last update
+
+When `read_doc`, `outline`, or `related_pages` is given a docs page the index doesn't have, the server first follows any redirect a read of the live sites recorded, and otherwise fetches the page from its live site (if `robots.txt` allows it), adds it to the index, and answers from it. Hosted mode doesn't.
+
+#### Other ways to build the index
 
 - `tenable-docs-mcp index import SNAPSHOT` builds the index from a snapshot folder on disk.
 - `tenable-docs-mcp index build -source …` builds from local copies of the sites' published files, one folder per site. Most users won't have these.
 
-Two environment variables change the downloads:
+#### Settings
 
 | Variable | Effect |
 | --- | --- |
-| `TDM_INDEX_URL` | `off` turns automatic downloads and updates off. Any other value is the `https://` address of a snapshot folder to use instead of the official one. |
-| `TDM_SITES` | Only download these sites, such as `en,jp` (default: all eight). `index pull -sites` does the same for one run. |
+| `TDM_INDEX_URL` | `off` turns automatic downloads and updates off. Any other value is the `https://` address of a snapshot folder to use instead of the one on docs.tenable.com. |
+| `TDM_CRAWL` | `off` turns off reading the live sites when the prebuilt index can't be reached, and fetching new pages on demand. The default is `on`. |
+| `TDM_SITES` | Only download or read these sites, such as `en,jp` (default: all eight). `-sites` on `index pull` and `index crawl` does the same for one run. |
 
 ## Connect it to an MCP client
 
@@ -352,7 +371,7 @@ For documentation writers, `verify-links` also checks draft topics: `-base` give
 
 ### Refreshing pages
 
-`refresh_index` updates pages the index already has. It honors `robots.txt`, sends conditional requests (`If-None-Match` and `If-Modified-Since`) so unchanged pages cost a `304`, rewrites a page only when its content hash changes, and removes pages the site no longer publishes. Refreshing a guide also fetches its table of contents again. New pages arrive with a full index update.
+`refresh_index` updates pages the index already has. It honors `robots.txt`, sends conditional requests (`If-None-Match` and `If-Modified-Since`) so unchanged pages cost a `304`, rewrites a page only when its content hash changes, and removes pages the site no longer publishes. Refreshing a guide also fetches its table of contents again. New pages arrive with the next index update, or as soon as a reading tool asks for them (see [Pages that are new since the last update](#pages-that-are-new-since-the-last-update)).
 
 ## The index and snapshot format
 
@@ -365,12 +384,12 @@ en-current.4.db    en-older.4.db
 jp-current.4.db    jp-older.4.db
 ...
 es-current.4.db
-snapshot/          official.json
+snapshot/          updates.json
 ```
 
-Each time a shard is rebuilt, the new build gets the next number, and the server switches to it. More than one MCP client can run the server on the same folder, so no process replaces a file another one has open (which Windows doesn't allow). The others switch to the new build within a minute, and older builds are deleted once nothing has them open. An index written before builds were numbered has `en-current.db` and so on, and it opens as it is. Only one process updates a folder at a time; it holds `update.lock` while it does.
+Each time a shard is rebuilt, the new build gets the next number, and the server switches to it. More than one MCP client can run the server on the same folder, so no process replaces a file another one has open (which Windows doesn't allow). The others switch to the new build within a minute, and older builds are deleted once nothing has them open. An index written before builds were numbered has `en-current.db` and so on, and it opens as it is. Only one process updates a folder at a time; it holds `update.lock` while it does, and keeps it fresh during a long read of the live sites.
 
-`snapshot/` holds the downloaded snapshot files and their manifest, so a shard can be rebuilt without downloading it again. `official.json` records the last update check, so every process using the folder knows when the next one is due. Each shard records the checksum of the snapshot file it was built from, which is how an update tells which shards changed.
+`snapshot/` holds the downloaded snapshot files and their manifest, so a shard can be rebuilt without downloading it again. `updates.json` records the last update check, so every process using the folder knows when the next one is due. Each shard records the checksum of the snapshot file it was built from, which is how an update tells which shards changed.
 
 A shard is created only when there are pages for it; a full build has 13. Each shard records its key and tokenizer in a `meta` table and its schema version in `PRAGMA user_version` (currently 2). Opening a shard written by a newer build, or a file that holds a different shard or tokenizer, fails with an error instead of returning wrong results. Shards run in WAL mode.
 
@@ -439,7 +458,8 @@ Before importing, `index import` and `index pull` check that the manifest's form
 | `tenable-docs-mcp gaps export [-since YYYY-MM-DD] [-json] [-file FILE]` | Summarize the recorded questions, grouped by product, as Markdown or JSON |
 | `tenable-docs-mcp gaps clear -yes [-file FILE]` | Delete the recorded questions |
 | `tenable-docs-mcp gaps path` | Print where the questions are recorded |
-| `tenable-docs-mcp index pull [-sites en,jp] [-index DIR]` | Download the official index, or update it; only shards that changed are downloaded and rebuilt |
+| `tenable-docs-mcp index pull [-sites en,jp] [-index DIR]` | Download the prebuilt index, or update it; only shards that changed are downloaded and rebuilt |
+| `tenable-docs-mcp index crawl [-sites en,jp] [-index DIR]` | Build or update the index from the live sites: a site the index has nothing for is read in full, and after that only what changed |
 | `tenable-docs-mcp index import [-sites en,jp] [-index DIR] SNAPSHOT` | Verify a snapshot folder and build the index from it |
 | `tenable-docs-mcp index verify SNAPSHOT` | Check a snapshot's files against its manifest |
 | `tenable-docs-mcp index build -source SITES [-sites en,jp] [-out DIR \| -index DIR] [-json]` | Build a snapshot (`-out`) or an index (`-index`) from local copies of the sites |
@@ -456,14 +476,14 @@ The index folder is, in order: the `-index` flag, `$TDM_INDEX_DIR`, or `tenable-
 
 ### No telemetry
 
-The server never reports how it's used. Downloading the official index and checking it for updates once a day are its only routine requests: they send nothing but the user agent and, so the CDN doesn't serve a stale manifest, the current time as a query string. `TDM_INDEX_URL=off` turns them off. Every other request comes from a feature in the next table.
+The server never reports how it's used. Downloading the prebuilt index and checking it for updates once a day are its only routine requests: they send nothing but the user agent and, so the CDN doesn't serve a stale manifest, the current time as a query string. `TDM_INDEX_URL=off` turns them off. When the prebuilt index can't be reached, the server reads the docs sites instead, at most once a day, and `TDM_CRAWL=off` turns that off. Every other request comes from a feature in the next table.
 
 ### Hosts it connects to
 
 | Host | When | Why |
 | --- | --- | --- |
-| `docs.tenable.com` | When the server starts with an empty index, once a day after that, and `index pull` | Download the official index from `/mcp/index/v1/`: the manifest, then only the shard files that changed |
-| `docs.tenable.com`, `jp.docs.tenable.com`, `zh-cn.docs.tenable.com`, `zh-tw.docs.tenable.com`, `kr.docs.tenable.com`, `fr.docs.tenable.com`, `de.docs.tenable.com`, `es.docs.tenable.com` | `refresh_index`; `verify_citations` with `check_live`; `verify-links -live` | Fetch pages, tables of contents, and `robots.txt` |
+| `docs.tenable.com` | When the server starts with an empty index, once a day after that, and `index pull` | Download the prebuilt index from `/mcp/index/v1/`: the manifest, then only the shard files that changed |
+| `docs.tenable.com`, `jp.docs.tenable.com`, `zh-cn.docs.tenable.com`, `zh-tw.docs.tenable.com`, `kr.docs.tenable.com`, `fr.docs.tenable.com`, `de.docs.tenable.com`, `es.docs.tenable.com` | Reading the live sites when the prebuilt index can't be reached, and `index crawl`; a reading tool asked for a page the index doesn't have; `refresh_index`; `verify_citations` with `check_live`; `verify-links -live` | Fetch sitemaps, pages, tables of contents, and `robots.txt` |
 | `www.tenable.com` | Only when the user accepts a feedback or gap form | Send the feedback, through the same endpoint the feedback form on each docs page uses |
 
 Every other host is refused, including redirects to other hosts and redirects from HTTPS to HTTP. Requests use the system's certificate store and honor `HTTPS_PROXY`, and identify themselves as `tenable-docs-mcp/<version> (+https://github.com/lanz/tenable-docs-mcp)`.
