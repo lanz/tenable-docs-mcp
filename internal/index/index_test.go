@@ -409,7 +409,7 @@ func TestOwnerOnly(t *testing.T) {
 	b, _ := ix.Build(Key{Site: "en"})
 	ix.Install(b)
 	ix.Close()
-	for _, p := range []string{dir, filepath.Join(dir, "en-current.db")} {
+	for _, p := range []string{dir, filepath.Join(dir, "en-current.1.db")} {
 		info, err := os.Stat(p)
 		if err != nil {
 			t.Fatal(err)
