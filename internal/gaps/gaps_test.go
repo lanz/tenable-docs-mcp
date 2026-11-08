@@ -92,3 +92,40 @@ func TestDefaultPath(t *testing.T) {
 		t.Errorf("DefaultPath = %q, %v", p, err)
 	}
 }
+
+func TestMarkSent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gaps.jsonl")
+	t1 := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	for _, r := range []Record{{Time: t1, Question: "First"}, {Time: t1.Add(time.Hour), Question: "Again"}, {Time: t1.Add(2 * time.Hour), Question: "Again"}} {
+		if _, err := Add(path, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A line that doesn't parse is kept as it is.
+	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	f.WriteString("not json\n")
+	f.Close()
+
+	sent := t1.Add(24 * time.Hour)
+	if ok, err := MarkSent(path, t1, "First", sent); !ok || err != nil {
+		t.Fatalf("MarkSent = %v, %v", ok, err)
+	}
+	if ok, _ := MarkSent(path, t1, "First", sent); ok {
+		t.Error("marked the same record twice")
+	}
+	if ok, _ := MarkSent(path, t1, "Missing", sent); ok {
+		t.Error("marked a record that isn't there")
+	}
+	// The latest unsent one of a question.
+	if ok, err := MarkLatestSent(path, "Again", sent); !ok || err != nil {
+		t.Fatalf("MarkLatestSent = %v, %v", ok, err)
+	}
+	recs, _ := Read(path)
+	if len(recs) != 3 || recs[0].SentAt.IsZero() || !recs[1].SentAt.IsZero() || recs[2].SentAt.IsZero() {
+		t.Errorf("records = %+v", recs)
+	}
+	data, _ := os.ReadFile(path)
+	if !strings.HasSuffix(string(data), "not json\n") {
+		t.Errorf("the unparsed line was lost: %q", data)
+	}
+}

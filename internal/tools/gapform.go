@@ -31,6 +31,15 @@ func checkGapState(state, page string, now time.Time) error {
 	return checkFormState(state, "gap\x00"+page, false, now)
 }
 
+// GapPage is the page a gap report is about, for a gap recorded without one: the
+// product's main guide, or the docs home page.
+func (e *Env) GapPage(ctx context.Context, product string) string { return e.gapPage(ctx, "", product) }
+
+// PageDetails describe a page for a feedback or gap report.
+func (e *Env) PageDetails(ctx context.Context, pageURL string) feedback.PageDetails {
+	return e.pageDetails(ctx, pageURL)
+}
+
 // gapPage is the page a gap report is about: the page that came closest, if the agent
 // gave one; otherwise the product's main guide; otherwise the docs home page.
 func (e *Env) gapPage(ctx context.Context, raw, product string) string {
@@ -145,6 +154,8 @@ func (e *Env) sendGap(ctx context.Context, req *mcp.CallToolRequest, page, recor
 	if err := e.Feedback.Send(ctx, p); err != nil {
 		return nil, gapOut{}, fmt.Errorf("recorded on this computer, but not sent: %w", err)
 	}
+	// So gaps submit doesn't offer to send it again.
+	_, _ = gaps.MarkLatestSent(e.GapsFile, recorded, now)
 	out.SentToTenable, out.Sent, out.WrittenBy = "sent", p.Preview, "the user, in the gap form"
 	return summary("Recorded on this computer, and sent to Tenable's documentation team. When you called this tool, "+
 		"the user's client showed them a form, which you don't see, with the question filled in. They reviewed it, "+

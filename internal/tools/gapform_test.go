@@ -97,6 +97,16 @@ func testGapForm(t *testing.T, protocol string) {
 		if tc.status == "sent" && (out.WrittenBy == "" || !strings.Contains(text, "showed them a form")) {
 			t.Errorf("%s: %q, %+v", tc.name, text, out)
 		}
+		// The record has its page, and is marked sent only if it was, so gaps submit
+		// doesn't offer it again.
+		if recs := recorded(t, env); len(recs) == 1 {
+			if recs[0].URL != feedbackPage {
+				t.Errorf("%s: recorded page %q", tc.name, recs[0].URL)
+			}
+			if sent := !recs[0].SentAt.IsZero(); sent != (tc.status == "sent") {
+				t.Errorf("%s: marked sent %v", tc.name, sent)
+			}
+		}
 		// The form has the question filled in, and nothing required.
 		schema, _ := json.Marshal(asked.RequestedSchema)
 		if !strings.Contains(string(schema), `"default":"How do I scan printers?"`) || strings.Contains(string(schema), "required") ||

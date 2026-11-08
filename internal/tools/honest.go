@@ -238,7 +238,9 @@ func registerHonest(s *mcp.Server, env *Env) {
 			// The user's answer to the form below; the gap was recorded on the first call.
 			return env.sendGap(ctx, req, env.gapPage(ctx, in.URL, product), in.Question, now)
 		}
-		n, err := gaps.Add(env.GapsFile, gaps.Record{Question: in.Question, Product: product, Language: lang, Note: in.Note, Version: env.Info.Version})
+		page := env.gapPage(ctx, in.URL, product)
+		n, err := gaps.Add(env.GapsFile, gaps.Record{Question: in.Question, Product: product, Language: lang, Note: in.Note,
+			Version: env.Info.Version, URL: page})
 		if err != nil {
 			return nil, gapOut{}, err
 		}
@@ -250,7 +252,7 @@ func registerHonest(s *mcp.Server, env *Env) {
 		if !canElicit(req) {
 			out.SentToTenable = "no_form"
 			return summary("%s This client can't show forms, so it wasn't offered to Tenable's documentation team; "+
-				"the user can share the summary instead.", text), out, nil
+				"the user can send it later with `tenable-docs-mcp gaps submit`, or share the summary.", text), out, nil
 		}
 		// Don't offer a form that can't be sent now.
 		if err := env.Feedback.Check(); err != nil {
@@ -259,7 +261,6 @@ func registerHonest(s *mcp.Server, env *Env) {
 				"or share the summary.", text, err), out, nil
 		}
 		// Offer to send it; the SDK calls this tool again with the user's answer.
-		page := env.gapPage(ctx, in.URL, product)
 		return &mcp.CallToolResult{
 			InputRequests: mcp.InputRequestMap{gapFormID: gapForm(page, strings.TrimSpace(in.Question), env.Info.Version)},
 			RequestState:  gapState(page, now),
