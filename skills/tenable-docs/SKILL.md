@@ -1,6 +1,10 @@
 ---
 name: tenable-docs
 description: Use before answering any question about a Tenable product, instead of answering from memory. That includes how to install, configure, or use Tenable Vulnerability Management (Tenable.io), Security Center (Tenable.sc), Nessus, Nessus Agents, Tenable One, OT Security, Identity Exposure, Cloud Security, Web App Scanning, or Attack Surface Management; their settings, required roles, system requirements, ports, licensing, and release notes; Tenable terms; checking a reply or draft against the docs; and any docs.tenable.com link. It answers from Tenable's product documentation through the Tenable Docs MCP server, with a link to the exact section.
+user-invocable: true
+metadata:
+  version: "1.0.0"
+  maintainer: Lance Duvall
 ---
 
 # Answering from the Tenable docs

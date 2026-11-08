@@ -22,8 +22,9 @@ var skillNonTools = map[string]bool{
 }
 
 // TestSkillMatchesTheTools keeps skills/tenable-docs/SKILL.md in step with the server:
-// its frontmatter names the skill and says when to use it, and every tool it names
-// exists, so renaming a tool fails here rather than quietly breaking the skill.
+// its frontmatter names the skill, says when to use it, and gives its version and
+// maintainer, and every tool it names exists, so renaming a tool fails here rather
+// than quietly breaking the skill.
 func TestSkillMatchesTheTools(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "skills", "tenable-docs", "SKILL.md"))
 	if err != nil {
@@ -42,6 +43,9 @@ func TestSkillMatchesTheTools(t *testing.T) {
 	}
 	if fields["name"] != "tenable-docs" {
 		t.Errorf("name = %q", fields["name"])
+	}
+	if !strings.Contains(front, "\nmetadata:\n") || !strings.Contains(front, "\n  maintainer: ") || !strings.Contains(front, "\n  version: ") {
+		t.Error("the frontmatter should give metadata.version and metadata.maintainer, as the docs team's skills do")
 	}
 	if d := fields["description"]; !strings.HasPrefix(d, "Use ") || len(d) > 1024 {
 		t.Errorf("description should say when to use the skill, in at most 1,024 characters: %d characters, %.40q", len(d), d)
