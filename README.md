@@ -558,7 +558,9 @@ TDM_INDEX_DIR=/path/to/index go test -run 'TestEval|TestEndToEnd' -v ./internal/
 
 ## License
 
-[GPL-3.0-or-later](LICENSE). Copyright (C) 2026 [Lance Duvall](https://github.com/lanz).
+Copyright (C) 2026 [Lance Duvall](https://github.com/lanz).
+
+Licensed under the [GNU General Public License v3.0](LICENSE) or later.
 
 ## Disclaimer
 
