@@ -170,6 +170,10 @@ func (e *Engine) search(ctx context.Context, req Request) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	res, err = e.namedProduct(ctx, lang, parsed, req, version, res)
+	if err != nil {
+		return nil, err
+	}
 	// Chinese characters alone could be Japanese or the other Chinese script, unless
 	// the user chose the language.
 	if (res == nil || len(res.Hits) == 0) && req.Language == "" && (lang == "zh-cn" || lang == "zh-tw") {
@@ -228,6 +232,28 @@ func (e *Engine) search(ctx context.Context, req Request) (*Result, error) {
 		h.Variants = v
 		if v.English != "" {
 			h.EnglishURL = englishSection(h.URL, v.English)
+		}
+	}
+	return res, nil
+}
+
+// namedProduct searches again within a product the question names, when none of the
+// results are for it. Words the product's pages don't use ("rolling out") can keep
+// them out of the results, even though naming the product says what the user wants.
+func (e *Engine) namedProduct(ctx context.Context, lang string, parsed Parsed, req Request, version string, res *Result) (*Result, error) {
+	if res == nil || req.Product != "" || answers(res, parsed, req) {
+		return res, nil
+	}
+	for _, product := range parsed.Products {
+		r := req
+		r.Product = product
+		pr, err := e.searchIn(ctx, lang, parsed, r, version)
+		if err != nil {
+			return nil, err
+		}
+		if pr != nil && len(pr.Hits) > 0 {
+			pr.Notes = append(pr.Notes, fmt.Sprintf("These results are for %s, which the question names.", product))
+			return pr, nil
 		}
 	}
 	return res, nil
