@@ -199,6 +199,14 @@ func indexBuild(ctx context.Context, args []string, stdout, stderr io.Writer) in
 			return 1
 		}
 		defer ix.Close()
+		l, err := published.Lock(d, now())
+		if err != nil {
+			fmt.Fprintln(stderr, "index build:", err)
+			return 1
+		}
+		defer l.Release()
+		printer := opts.Progress
+		opts.Progress = func(code string, done, total int) { l.Touch(); printer(code, done, total) }
 		sink := build.NewIndexSink(ix, builtAt.Format(time.RFC3339))
 		if rep, err = build.Run(ctx, opts, sink); err != nil {
 			sink.Discard()
@@ -307,6 +315,12 @@ func indexImport(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return 1
 	}
 	defer ix.Close()
+	l, err := published.Lock(d, now())
+	if err != nil {
+		fmt.Fprintln(stderr, "index import:", err)
+		return 1
+	}
+	defer l.Release()
 	sink := build.NewIndexSink(ix, m.BuiltAt)
 	pages := map[string]int{}
 	for _, sh := range m.Shards {

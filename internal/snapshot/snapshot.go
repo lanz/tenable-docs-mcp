@@ -25,6 +25,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -42,9 +43,62 @@ const Format = 1
 // ManifestFile is the manifest's name in a snapshot folder.
 const ManifestFile = "manifest.json"
 
-// maxDecoderMemory limits what decompressing one shard can use, against corrupt or
-// hostile files.
+// Limits on reading a shard file, against corrupt or hostile ones: what the zstd
+// decoder may use for its window, how large one record (one line) may be, and how much
+// the whole file may decompress to. The largest real record is under 1 MiB and the
+// largest shard decompresses to under 100 MiB.
 const maxDecoderMemory = 512 << 20
+
+// Variables, so tests can lower them.
+var (
+	maxRecord       = 16 << 20
+	maxDecompressed = int64(1 << 30)
+)
+
+// sha256Hex matches a checksum as the manifest gives it, in lowercase.
+var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// clip shortens a value from a snapshot for an error message, which can end up in the
+// state file and in front of an assistant.
+func clip(s string) string {
+	if r := []rune(s); len(r) > 200 {
+		return string(r[:200]) + "…"
+	}
+	return s
+}
+
+// errTooBig is a shard file that decompresses to more than maxDecompressed.
+var errTooBig = errors.New("too large")
+
+// capReader reads at most n bytes from r, and fails with errTooBig after that, so a
+// file over the limit fails as a whole rather than at a line it cut short.
+type capReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *capReader) Read(p []byte) (int, error) {
+	if c.n < 0 {
+		return 0, errTooBig
+	}
+	if int64(len(p)) > c.n+1 {
+		p = p[:c.n+1]
+	}
+	k, err := c.r.Read(p)
+	c.n -= int64(k)
+	if c.n < 0 {
+		return 0, errTooBig
+	}
+	return k, err
+}
+
+// mib describes a size in MiB, or in KiB when it's smaller (as in tests).
+func mib(n int64) string {
+	if n < 1<<20 {
+		return fmt.Sprintf("%d KiB", n>>10)
+	}
+	return fmt.Sprintf("%d MiB", n>>20)
+}
 
 // Manifest describes a snapshot.
 type Manifest struct {
@@ -248,11 +302,15 @@ func ParseManifest(data []byte) (Manifest, error) {
 	if m.Format != Format {
 		return Manifest{}, fmt.Errorf("%w: the snapshot is format %d, and this version of tenable-docs-mcp reads format %d; update it", ErrFormat, m.Format, Format)
 	}
+	seen := map[string]bool{}
 	for _, s := range m.Shards {
-		if _, ok := site.ByCode(s.Site); !ok || len(s.SHA256) != 64 || s.Key != s.IndexKey().String() ||
-			s.File != FileName(s.IndexKey(), strings.ToLower(s.SHA256)) {
-			return Manifest{}, fmt.Errorf("%s: unexpected shard %q (%s)", ManifestFile, s.Key, s.File)
+		// The checksum must be hex, so the file name it makes can't hold a path.
+		if _, ok := site.ByCode(s.Site); !ok || !sha256Hex.MatchString(strings.ToLower(s.SHA256)) ||
+			s.Key != s.IndexKey().String() || s.File != FileName(s.IndexKey(), strings.ToLower(s.SHA256)) ||
+			filepath.Base(s.File) != s.File || seen[s.Key] {
+			return Manifest{}, fmt.Errorf("%s: unexpected shard %q (%s)", ManifestFile, clip(s.Key), clip(s.File))
 		}
+		seen[s.Key] = true
 	}
 	return m, nil
 }
@@ -294,23 +352,29 @@ func Read(ctx context.Context, dir string, s Shard, sink build.Sink) error {
 	}
 	defer zr.Close()
 	k := s.IndexKey()
-	dec := json.NewDecoder(bufio.NewReaderSize(zr, 1<<20))
+	// Each line is one record. Both a line's size and the whole file's decompressed size
+	// are limited, so a file that matches its checksum can't still exhaust memory.
+	// The scanner's limit is the larger of maxRecord and its first buffer's capacity.
+	sc := bufio.NewScanner(&capReader{r: zr, n: maxDecompressed})
+	sc.Buffer(make([]byte, 0, min(1<<20, maxRecord)), maxRecord)
 	pages := 0
-	for {
+	for sc.Scan() {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		line := sc.Bytes()
+		if len(line) == 0 {
+			continue
+		}
 		var r record
-		if err := dec.Decode(&r); errors.Is(err, io.EOF) {
-			break
-		} else if err != nil {
+		if err := json.Unmarshal(line, &r); err != nil {
 			return fmt.Errorf("%s: %w", s.File, err)
 		}
 		switch {
 		case r.Toc != nil:
 			g, ok := site.GuideOf(strings.TrimRight(r.Toc.Guide, "/") + "/Content/x.htm")
 			if !ok || g.RootURL != r.Toc.Guide {
-				return fmt.Errorf("%s: a table of contents for %q, which isn't a guide", s.File, r.Toc.Guide)
+				return fmt.Errorf("%s: a table of contents for %q, which isn't a guide", s.File, clip(r.Toc.Guide))
 			}
 			g.Name = r.Toc.Name
 			if err := sink.Toc(ctx, k, g, r.Toc.Entries); err != nil {
@@ -318,7 +382,7 @@ func Read(ctx context.Context, dir string, s Shard, sink build.Sink) error {
 			}
 		case r.Page != nil && r.Page.Page != nil:
 			if key, ok := index.KeyFor(r.Page.Page.URL); !ok || key != k {
-				return fmt.Errorf("%s: page %s doesn't belong in %s", s.File, r.Page.Page.URL, k)
+				return fmt.Errorf("%s: page %s doesn't belong in %s", s.File, clip(r.Page.Page.URL), k)
 			}
 			if err := sink.Page(ctx, k, *r.Page); err != nil {
 				return err
@@ -327,6 +391,14 @@ func Read(ctx context.Context, dir string, s Shard, sink build.Sink) error {
 		default:
 			return fmt.Errorf("%s: a line that's neither a page nor a table of contents", s.File)
 		}
+	}
+	switch err := sc.Err(); {
+	case errors.Is(err, bufio.ErrTooLong):
+		return fmt.Errorf("%s: a record longer than %s", s.File, mib(int64(maxRecord)))
+	case errors.Is(err, errTooBig):
+		return fmt.Errorf("%s decompresses to more than %s", s.File, mib(maxDecompressed))
+	case err != nil:
+		return fmt.Errorf("%s: %w", s.File, err)
 	}
 	if pages != s.Pages {
 		return fmt.Errorf("%s has %d pages; the manifest says %d", s.File, pages, s.Pages)

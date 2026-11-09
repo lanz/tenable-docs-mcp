@@ -263,6 +263,24 @@ func TestConfig(t *testing.T) {
 	}
 }
 
+func TestDoctorIndexURL(t *testing.T) {
+	def := "https://docs.tenable.com/mcp/index/v1/manifest.json"
+	for env, want := range map[string]string{
+		"":                         def,
+		"off":                      def,
+		"https://mirror.example/x": "https://mirror.example/x/manifest.json",
+		"https://mirror.example/":  "https://mirror.example/manifest.json",
+	} {
+		t.Setenv("TDM_INDEX_URL", env)
+		if got := indexURL(def); got != want {
+			t.Errorf("TDM_INDEX_URL=%q: %s", env, got)
+		}
+		if got := indexURL("https://docs.tenable.com/robots.txt"); got != "https://docs.tenable.com/robots.txt" {
+			t.Errorf("robots.txt became %s", got)
+		}
+	}
+}
+
 func TestShellQuote(t *testing.T) {
 	for in, want := range map[string]string{
 		"/usr/local/bin/tenable-docs-mcp": "/usr/local/bin/tenable-docs-mcp",

@@ -494,7 +494,7 @@ The manifest lists every shard:
 
 (The values above are illustrative.) `latest_release` names the newest release of the server, so servers that download the snapshot can tell their users about it. A snapshot built by a release names that release; one built by a prerelease or from a commit leaves the field out. Older servers ignore it, so it didn't change the format.
 
-Before importing, `index import` and `index pull` check that the manifest's format is one it reads, that each shard's site is known, and that each file name matches its key and checksum. It then verifies each file's size and SHA-256 before decompressing it, caps decompression memory at 512 MiB, checks that every page belongs to the shard it's in, and checks the page count against the manifest. `index verify` runs the size and checksum checks alone.
+Before importing, `index import` and `index pull` check that the manifest's format is one they read, that each shard is listed once and its site is known, that each checksum is a SHA-256 in hex, and that each file name matches its key and checksum. They then verify each file's size and SHA-256 before decompressing it, and while decompressing, refuse a record over 16 MiB or a shard over 1 GiB, check that every page belongs to the shard it's in, and check the page count against the manifest. `index pull` follows redirects only to HTTPS on the index's own host. `index verify` runs the size and checksum checks alone.
 
 ### Change history
 
@@ -541,7 +541,7 @@ A command exits with 0 when the tool found something, 1 when it found nothing or
 | --- | --- |
 | `tenable-docs-mcp` | Serve MCP over stdio (what clients run) |
 | `tenable-docs-mcp serve [-http ADDR] [-index DIR]` | Serve over stdio, or over streamable HTTP on a loopback `ADDR`, from the index in `DIR` |
-| `tenable-docs-mcp doctor [-index DIR]` | Check that the index opens, with the current schema and a folder only you can read; that the docs sites and the prebuilt index can be reached, saying so when a TLS-inspecting proxy is in the way; that your synonyms file reads; and that this program's path will work in client settings |
+| `tenable-docs-mcp doctor [-index DIR]` | Check that the index opens, with the current schema and a folder only you can read; that the docs sites and the prebuilt index (at `TDM_INDEX_URL`, when set) can be reached, saying so when a TLS-inspecting proxy is in the way; that your synonyms file reads; and that this program's path will work in client settings |
 | `tenable-docs-mcp config [-client NAME] [-index DIR]` | Print MCP client settings, ready to paste (see [Connect it to an MCP client](#connect-it-to-an-mcp-client)) |
 | `tenable-docs-mcp verify-links [-base URL] [-live] [-json] [-index DIR] FILE...` | Check the docs links in answers or drafts (`-` reads standard input) |
 | `tenable-docs-mcp gaps export [-since YYYY-MM-DD] [-json] [-file FILE]` | Summarize the recorded questions, grouped by product, as Markdown or JSON |
@@ -563,7 +563,7 @@ A command exits with 0 when the tool found something, 1 when it found nothing or
 
 The index folder is, in order: the `-index` flag, `$TDM_INDEX_DIR`, or `tenable-docs-mcp/index` in the user cache folder.
 
-`doctor` exits with 1 when a check fails. `verify-links` exits with 1 when any link is broken, and with 2 on a usage or input error. `index build` exits with 1 when any page fails. `index pull` exits with 1 when the download or the build fails, leaving the index as it was.
+`doctor` exits with 1 when a check fails. `verify-links` exits with 1 when any link is broken, and with 2 on a usage or input error. `index build` exits with 1 when any page fails. `index pull` exits with 1 when the download or the build fails. A failed download leaves the index as it was; when building a shard fails, the shards rebuilt before it are kept, and the next `index pull` rebuilds the rest.
 
 ## Privacy and security
 
