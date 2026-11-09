@@ -52,7 +52,7 @@ var texts = map[string]text{
 	},
 	"zh-tw": {
 		Title:     "Tenable 文件",
-		Summary:   "Tenable One 及其他 Tenable 產品的文件：使用者指南、最佳實務、參考指南、整合指南和版本資訊。",
+		Summary:   "Tenable One 及其他 Tenable 產品的文件：使用者指南、最佳做法、參考指南、整合指南和版本資訊。",
 		Intro:     "每份指南連結至其首頁，首頁的目錄連結至其餘頁面。未翻譯的指南請參閱英文文件。",
 		Other:     "其他指南",
 		Languages: "其他語言的文件：",
@@ -68,7 +68,7 @@ var texts = map[string]text{
 	},
 	"fr": {
 		Title:     "Documentation Tenable",
-		Summary:   "Documentation de Tenable One et des autres produits Tenable : guides de l'utilisateur, bonnes pratiques, guides de référence et d'intégration, et notes de version.",
+		Summary:   "Documentation de Tenable One et des autres produits Tenable : guides de l'utilisateur, meilleures pratiques, guides de référence et d'intégration, et notes de version.",
 		Intro:     "Chaque guide renvoie à sa première page, dont la table des matières mène aux autres. Les guides non traduits se trouvent dans la documentation en anglais.",
 		Other:     "Autres guides",
 		Languages: "La documentation dans d'autres langues :",
