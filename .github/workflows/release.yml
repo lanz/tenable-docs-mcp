@@ -44,6 +44,18 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/*.mcpb
+      - name: Version
+        id: version
+        # A tag with a hyphen, such as v1.0.0-rc.1, is a prerelease: it gets a GitHub
+        # prerelease and a container image under its own version, but not the latest
+        # tag or an MCP Registry entry.
+        run: |
+          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
@@ -51,9 +63,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME"
           dist/*.tar.gz dist/*.zip dist/*.mcpb dist/SHA256SUMS dist/tenable-docs-mcp.spdx.json
           --verify-tag --generate-notes
-      - name: Version
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          ${{ steps.version.outputs.prerelease == 'true' && '--prerelease' || '' }}
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
@@ -69,10 +79,12 @@ jobs:
           # The version without its v (1.2.3), as server.json names the image.
           tags: |
             ghcr.io/lanz/tenable-docs-mcp:${{ steps.version.outputs.version }}
-            ghcr.io/lanz/tenable-docs-mcp:latest
+            ${{ steps.version.outputs.prerelease == 'false' && 'ghcr.io/lanz/tenable-docs-mcp:latest' || '' }}
       - name: Install cosign
+        if: steps.version.outputs.prerelease == 'false'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Download and verify mcp-publisher
+        if: steps.version.outputs.prerelease == 'false'
         run: |
           set -euo pipefail
           archive="mcp-publisher_linux_amd64.tar.gz"
@@ -87,10 +99,11 @@ jobs:
           tar xzf "$archive" mcp-publisher
           rm -f "$archive" "$archive.sigstore.json"
       - name: Publish to the MCP Registry
+        if: steps.version.outputs.prerelease == 'false'
         # The registry checks that the container image is public and labeled with the
-        # server's name. A new GitHub package is private: before the first release's
-        # publish, make it public (Packages > tenable-docs-mcp > Package settings), then
-        # re-run this job.
+        # server's name. A new GitHub package is private, and exists only once an image
+        # is pushed: release a prerelease first (such as v1.0.0-rc.1), make the package
+        # public (Packages > tenable-docs-mcp > Package settings), then release.
         run: |
           ./mcp-publisher login github-oidc
           ./mcp-publisher publish dist/server.json
