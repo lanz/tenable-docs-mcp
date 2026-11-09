@@ -18,6 +18,7 @@ import (
 	"github.com/lanz/tenable-docs-mcp/internal/extract"
 	"github.com/lanz/tenable-docs-mcp/internal/page"
 	"github.com/lanz/tenable-docs-mcp/internal/site"
+	"github.com/lanz/tenable-docs-mcp/internal/textdiff"
 )
 
 // Doc is one page ready to store: the parsed page, what the sitemap says about it, and
@@ -136,6 +137,7 @@ func (t *Tx) Put(d Doc) (changed bool, err error) {
 	newHash := d.hash()
 	var oldID int64
 	var oldHash string
+	var oldSections []textdiff.Section
 	err = t.tx.QueryRowContext(t.ctx, "SELECT id, content_hash FROM pages WHERE url = ?", p.URL).Scan(&oldID, &oldHash)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -146,6 +148,10 @@ func (t *Tx) Put(d Doc) (changed bool, err error) {
 		_, err = t.exec("UPDATE pages SET etag = ?, last_modified = ? WHERE id = ?", d.ETag, d.LastModified, oldID)
 		return false, err
 	default:
+		// The page's sections as they were, to record what the update changes.
+		if oldSections, err = t.sectionsOf(oldID); err != nil {
+			return false, err
+		}
 		if _, err := t.exec("DELETE FROM pages WHERE id = ?", oldID); err != nil {
 			return false, err
 		}
@@ -207,18 +213,69 @@ func (t *Tx) Put(d Doc) (changed bool, err error) {
 			return false, fmt.Errorf("put %s: link: %w", p.URL, err)
 		}
 	}
-	if _, err := t.exec(`INSERT INTO changes (url, change, at, old_hash, new_hash) VALUES (?, ?, ?, ?, ?)`,
-		p.URL, change, now(), oldHash, newHash); err != nil {
+	var sectionChanges []textdiff.Change
+	if change == "updated" {
+		newSections := make([]textdiff.Section, len(p.Sections))
+		for i, s := range p.Sections {
+			newSections[i] = textdiff.Section{Heading: s.Heading, URL: s.URL, Body: s.Markdown}
+		}
+		sectionChanges, _ = textdiff.Sections(oldSections, newSections)
+	}
+	if err := t.recordChange(Change{URL: p.URL, Change: change, At: now(), OldHash: oldHash, NewHash: newHash,
+		Title: p.Title, Product: d.Product, Guide: d.Guide.Path, Sections: sectionChanges}); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
+// sectionsOf returns a stored page's sections, for comparing.
+func (t *Tx) sectionsOf(pageID int64) ([]textdiff.Section, error) {
+	rows, err := t.tx.QueryContext(t.ctx, "SELECT heading, url, body FROM sections WHERE page_id = ? ORDER BY ord", pageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []textdiff.Section
+	for rows.Next() {
+		var s textdiff.Section
+		if err := rows.Scan(&s.Heading, &s.URL, &s.Body); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// recordChange adds a change, with its sections, to the change history.
+func (t *Tx) recordChange(c Change) error {
+	res, err := t.exec(`INSERT INTO changes (url, change, at, old_hash, new_hash, title, product, guide) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		c.URL, c.Change, c.At, c.OldHash, c.NewHash, c.Title, c.Product, c.Guide)
+	if err != nil {
+		return err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+	for i, s := range c.Sections {
+		url := s.ToURL
+		if url == "" {
+			url = s.FromURL
+		}
+		if _, err := t.exec(`INSERT INTO section_changes (change_id, ord, heading, status, url, added, removed, more)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, i, s.Heading, s.Status, url, toJSON(s.Added), toJSON(s.Removed), s.More); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Remove deletes a page and everything extracted from it. It returns false if the page
 // wasn't stored.
 func (t *Tx) Remove(pageURL string) (bool, error) {
-	var hash string
-	err := t.tx.QueryRowContext(t.ctx, "SELECT content_hash FROM pages WHERE url = ?", pageURL).Scan(&hash)
+	c := Change{URL: pageURL, Change: "removed", At: now()}
+	err := t.tx.QueryRowContext(t.ctx, "SELECT content_hash, title, product, guide FROM pages WHERE url = ?", pageURL).
+		Scan(&c.OldHash, &c.Title, &c.Product, &c.Guide)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	} else if err != nil {
@@ -227,7 +284,7 @@ func (t *Tx) Remove(pageURL string) (bool, error) {
 	if _, err := t.exec("DELETE FROM pages WHERE url = ?", pageURL); err != nil {
 		return false, err
 	}
-	_, err = t.exec(`INSERT INTO changes (url, change, at, old_hash) VALUES (?, 'removed', ?, ?)`, pageURL, now(), hash)
+	err = t.recordChange(c)
 	return err == nil, err
 }
 

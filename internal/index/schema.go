@@ -16,7 +16,34 @@ type migration func(tx *sql.Tx, tokenizer string) error
 
 // migrations lists every schema version. Append to it; never change an entry that has
 // shipped.
-var migrations = []migration{schemaV1, schemaV2}
+var migrations = []migration{schemaV1, schemaV2, schemaV3}
+
+// schemaV3 records what each change was, for listing changes: the page's title,
+// product, and guide (a removed page has no row to read them from), and the sections
+// an update changed, with the lines that differ (JSON lists).
+func schemaV3(tx *sql.Tx, _ string) error {
+	for _, s := range []string{
+		`ALTER TABLE changes ADD COLUMN title TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE changes ADD COLUMN product TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE changes ADD COLUMN guide TEXT NOT NULL DEFAULT ''`,
+		`CREATE TABLE section_changes (
+			change_id INTEGER NOT NULL REFERENCES changes(id) ON DELETE CASCADE,
+			ord       INTEGER NOT NULL,
+			heading   TEXT NOT NULL,
+			status    TEXT NOT NULL CHECK (status IN ('added', 'changed', 'removed')),
+			url       TEXT NOT NULL DEFAULT '',
+			added     TEXT NOT NULL DEFAULT '[]',
+			removed   TEXT NOT NULL DEFAULT '[]',
+			more      INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (change_id, ord)
+		) WITHOUT ROWID`,
+	} {
+		if _, err := tx.Exec(s); err != nil {
+			return fmt.Errorf("schema v3: %w\n%s", err, s)
+		}
+	}
+	return nil
+}
 
 // schemaV2 adds the vocabulary that spelling suggestions come from: each word in the
 // sections' text, as written (not stemmed), with how often it occurs.

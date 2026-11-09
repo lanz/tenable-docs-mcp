@@ -15,7 +15,7 @@
 //	tenable-docs-mcp verify-links [-base URL] [-live] FILE...
 //	                                       check the docs links in answers or draft topics
 //	tenable-docs-mcp search|read|outline|browse|related|products|setting|role|
-//	                 requirements|release-notes|term|status
+//	                 requirements|release-notes|term|compare|changes|status
 //	                                       run a tool from a terminal
 //	tenable-docs-mcp doctor                check the index, the network, and the setup
 //	tenable-docs-mcp config                print settings for MCP clients
@@ -80,6 +80,11 @@ structured output; -h lists a command's flags; exits 1 when nothing is found):
   tenable-docs-mcp requirements QUESTION system requirements, ports, and the like
   tenable-docs-mcp release-notes [WORDS] release-note entries, newest first
   tenable-docs-mcp term TERM             define a term or product name, as define_term does
+  tenable-docs-mcp compare URL -from-version V [-to-version V]
+                                         compare a page, or with -setting a setting, between
+                                         two versions, as compare_versions does
+  tenable-docs-mcp changes SINCE         the pages changed since a date (2026-10-01, or 30d),
+                                         as whats_changed does
   tenable-docs-mcp status                the version and what the index holds; exits 1 if
                                          the index isn't ready
 

@@ -201,7 +201,7 @@ To install it in Claude Code, copy the `skills/tenable-docs` folder into `~/.cla
 
 ## Tools
 
-The server registers 16 tools. Each returns structured output (with a JSON schema) and a short text summary for the assistant. The search and reading tools are annotated read-only, idempotent, and closed-world: they read only the local index.
+The server registers 18 tools. Each returns structured output (with a JSON schema) and a short text summary for the assistant. The search and reading tools are annotated read-only and idempotent. Most are closed-world, reading only the local index; `read_doc`, `outline`, and `related_pages` are open-world, because for a page the index doesn't have, they can fetch it from its live site (see [Pages that are new since the last update](#pages-that-are-new-since-the-last-update)).
 
 ### Search and read
 
@@ -222,6 +222,8 @@ The server registers 16 tools. Each returns structured output (with a JSON schem
 | `required_role` | The roles and permissions the docs say a task needs, by page. When no matching page states a role, it says so and lists the closest pages. | `task`, `product`, `version`, and `language` |
 | `requirements` | Rows from requirements tables: `ports`, `hardware`, `operating-systems`, `browsers`, `dependencies`, or `other`. Infers the kind and product from a question such as "Security Center hardware for 10,000 hosts". | `product`, `kind`, `query`, `version`, and `limit` (1 to 100, default 30) |
 | `release_notes` | Release-note entries, newest first, filtered by product, date range, version (10.8 matches 10.8.1), and words. | `product`, `since`, `until` (`YYYY`, `YYYY-MM`, or `YYYY-MM-DD`), `version`, `query`, `language`, `full`, and `limit` (1 to 50, default 10) |
+| `compare_versions` | How a page, or a setting, differs between two versions of an on-premises product: the sections that changed, were added, or were removed, with the lines that differ, or how a setting's default, values, and description changed. Links to the same page in each version don't count as changes. | `url` (a page in any version) or `setting` (with `product`), `from_version`, and `to_version` (default: the current version) |
+| `whats_changed` | The pages added, updated, or removed since a date, newest first, with the sections each update changed. See [Change history](#change-history). | `since` (`2026-10-01`, `2026-10`, or `30d`), `product`, `guide`, `language`, and `limit` (1 to 100, default 20) |
 | `define_term` | Glossary definitions (abbreviations also match by initials, so NVD finds National Vulnerability Database), what a product name refers to, including retired names, and the term's synonyms. | `term` and `language` |
 
 `find_setting` and `requirements` read English pages, because they recognize tables by their English column headings. For a question in another language, they say so in their notes.
@@ -425,7 +427,7 @@ Each time a shard is rebuilt, the new build gets the next number, and the server
 
 `snapshot/` holds the downloaded snapshot files and their manifest, so a shard can be rebuilt without downloading it again. `updates.json` records the last update check, so every process using the folder knows when the next one is due. Each shard records the checksum of the snapshot file it was built from, which is how an update tells which shards changed.
 
-A shard is created only when there are pages for it; a full build has 13. Each shard records its key and tokenizer in a `meta` table and its schema version in `PRAGMA user_version` (currently 2). Opening a shard written by a newer build, or a file that holds a different shard or tokenizer, fails with an error instead of returning wrong results. Shards run in WAL mode.
+A shard is created only when there are pages for it; a full build has 13. Each shard records its key and tokenizer in a `meta` table and its schema version in `PRAGMA user_version` (currently 3). Opening a shard written by a newer build, or a file that holds a different shard or tokenizer, fails with an error instead of returning wrong results. Shards run in WAL mode.
 
 | Table | Holds |
 | --- | --- |
@@ -438,7 +440,7 @@ A shard is created only when there are pages for it; a full build has 13. Each s
 | `links` | Links between pages |
 | `tocs` | Each guide's table of contents, as JSON |
 | `vocabulary` | Indexed words and their frequencies, for spelling suggestions |
-| `changes` | Pages added, updated, or removed by each build |
+| `changes`, `section_changes` | The change history: pages added, updated, or removed, and for an update, the sections that changed and the lines that differ |
 
 Builds and imports never write to a live shard. Each shard is built beside it as `<key>.building.db`, in transactions of 500 pages, then optimized (vocabulary rebuilt, FTS segments merged, `PRAGMA optimize`) and swapped in under a write lock, so searches keep working throughout. Importing some sites (`-sites en,jp`) replaces only their shards.
 
@@ -482,6 +484,14 @@ The manifest lists every shard:
 
 Before importing, `index import` and `index pull` check that the manifest's format is one it reads, that each shard's site is known, and that each file name matches its key and checksum. It then verifies each file's size and SHA-256 before decompressing it, caps decompression memory at 512 MiB, checks that every page belongs to the shard it's in, and checks the page count against the manifest. `index verify` runs the size and checksum checks alone.
 
+### Change history
+
+Each shard keeps a year of changes: the pages added, updated, or removed, and for an update, the sections that changed, with the lines that differ. `whats_changed` lists them.
+
+- **An update from the prebuilt index** builds each changed shard anew. Before it's swapped in, it takes the old shard's history, and the differences between the two are recorded as the update's changes. A rebuilt shard's own records, which list every page as added, aren't kept.
+- **A crawl, a refresh, or a page fetched on demand** changes the shard in place, and records each change as it's made.
+- **The history begins** when the index is first built, which the shard records as `history_since`. For a period before that, `whats_changed` lists the pages the sitemap dates in it, without what changed.
+
 ## Command line
 
 ### The tools, from a terminal
@@ -501,6 +511,8 @@ Every tool that reads the docs has a command, for writers, support, quick checks
 | `requirements QUESTION` | `requirements` | `query` |
 | `release-notes [WORDS]` | `release_notes` | `query` |
 | `term TERM` | `define_term` | `term` |
+| `compare URL -from-version V` (or `compare -setting NAME -from-version V`) | `compare_versions` | `url` |
+| `changes SINCE` | `whats_changed` | `since` |
 | `status` | `index_status` | |
 
 ```bash

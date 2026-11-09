@@ -62,6 +62,10 @@ func TestToolAnnotations(t *testing.T) {
 		"report_gap":         {readOnly: false, openWorld: true}, // writes a local file, and can send to Tenable
 		"refresh_index":      {readOnly: false, openWorld: true}, // fetches from the live sites
 		"open_feedback_form": {readOnly: false, openWorld: true}, // sends to Tenable
+		// Can fetch a page the index doesn't have from its live site.
+		"read_doc":      {readOnly: true, openWorld: true},
+		"outline":       {readOnly: true, openWorld: true},
+		"related_pages": {readOnly: true, openWorld: true},
 	}
 	var names []string
 	for _, tool := range res.Tools {
@@ -81,7 +85,7 @@ func TestToolAnnotations(t *testing.T) {
 			t.Errorf("%s: every tool needs an output schema", tool.Name)
 		}
 	}
-	if got, want := strings.Join(names, " "), "browse_guide define_term find_setting index_status list_products open_feedback_form outline read_doc refresh_index related_pages release_notes report_gap required_role requirements search_docs verify_citations"; got != want {
+	if got, want := strings.Join(names, " "), "browse_guide compare_versions define_term find_setting index_status list_products open_feedback_form outline read_doc refresh_index related_pages release_notes report_gap required_role requirements search_docs verify_citations whats_changed"; got != want {
 		t.Errorf("tools = %s, want %s", got, want)
 	}
 }
