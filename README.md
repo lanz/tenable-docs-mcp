@@ -555,6 +555,7 @@ A command exits with 0 when the tool found something, 1 when it found nothing or
 | `tenable-docs-mcp index crawl [-sites en,jp] [-index DIR]` | Build or update the index from the live sites: a site the index has nothing for is read in full, and after that only what changed |
 | `tenable-docs-mcp index import [-sites en,jp] [-index DIR] SNAPSHOT` | Verify a snapshot folder and build the index from it |
 | `tenable-docs-mcp index verify SNAPSHOT` | Check a snapshot's files against its manifest |
+| `tenable-docs-mcp index llms -out DIR [-sites en,jp] [-index DIR]` | Write each site's [llms.txt](https://llmstxt.org), listing its guides by product with their first pages and descriptions, into `DIR/SITE/llms.txt` |
 | `tenable-docs-mcp index build -source SITES [-sites en,jp] [-guide-names FILE] [-out DIR \| -index DIR] [-json]` | Build a snapshot (`-out`) or an index (`-index`) from local copies of the sites |
 | `tenable-docs-mcp version` | Print the version |
 | `tenable-docs-mcp help` | Show usage |
@@ -695,6 +696,7 @@ TDM_INDEX_DIR=/path/to/index go test -run 'TestEval|TestEndToEnd' -v ./internal/
 | `internal/tools` | Tools, prompts, resources, and completions |
 | `internal/search` | Question parsing, language detection, product names, ranking, and spelling suggestions |
 | `internal/index` | SQLite shards, schema, and queries |
+| `internal/llmstxt` | Each site's llms.txt, from the index |
 | `internal/page` | HTML to sections, tables, links, glossary terms, and required roles |
 | `internal/extract` | Settings, requirements, release notes, glossary, and links |
 | `internal/site` | The sites, sitemaps, `robots.txt`, tables of contents, and HTTP and local sources |

@@ -144,3 +144,44 @@ func TestIndexBuildGuideNames(t *testing.T) {
 		t.Errorf("build = %d\n%s\n%s", code, out, errOut)
 	}
 }
+
+func TestIndexLLMs(t *testing.T) {
+	ixDir := filepath.Join(t.TempDir(), "index")
+	names := writeFile(t, "names.json", `{"en": {"widget": "Widget Manager User Guide"}}`)
+	if code, out, errOut := runCmd("index", "build", "-source", testSources(t), "-guide-names", names, "-index", ixDir); code != 0 {
+		t.Fatalf("build = %d\n%s\n%s", code, out, errOut)
+	}
+	out := filepath.Join(t.TempDir(), "llms")
+	code, stdout, errOut := runCmd("index", "llms", "-index", ixDir, "-out", out)
+	if code != 0 || !strings.Contains(stdout, "https://docs.tenable.com/llms.txt: 1 guide, 1 in older versions") {
+		t.Fatalf("llms = %d\n%s\n%s", code, stdout, errOut)
+	}
+	b, err := os.ReadFile(filepath.Join(out, "en", "llms.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(b); !strings.HasPrefix(got, "# Tenable Documentation\n") ||
+		!strings.Contains(got, "- [Widget Manager User Guide](https://docs.tenable.com/widget/Content/Start.htm)") ||
+		!strings.Contains(got, "- [日本語](https://jp.docs.tenable.com/llms.txt)") || !strings.Contains(got, "## Optional") {
+		t.Errorf("en llms.txt:\n%s", got)
+	}
+	if _, err := os.Stat(filepath.Join(out, "jp", "llms.txt")); err != nil {
+		t.Error(err)
+	}
+	// Only some sites, and the errors.
+	if code, stdout, _ := runCmd("index", "llms", "-index", ixDir, "-out", out, "-sites", "jp"); code != 0 ||
+		!strings.Contains(stdout, "https://jp.docs.tenable.com/llms.txt:") || strings.Contains(stdout, "https://docs.tenable.com/llms.txt:") {
+		t.Errorf("jp only = %d %s", code, stdout)
+	}
+	for _, args := range [][]string{
+		{"index", "llms"},
+		{"index", "llms", "-index", ixDir, "-out", out, "-sites", "fr"},
+	} {
+		if code, _, _ := runCmd(args...); code != 2 {
+			t.Errorf("%v = %d, want 2", args, code)
+		}
+	}
+	if code, _, _ := runCmd("index", "llms", "-index", filepath.Join(t.TempDir(), "empty"), "-out", out); code != 1 {
+		t.Error("an empty index should fail")
+	}
+}
