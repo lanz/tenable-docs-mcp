@@ -108,6 +108,7 @@ func newTestSource(f *fixtureSite, waits *[]time.Duration, mod func(*HTTPConfig)
 		RatePerSecond: 1000,
 		MaxBodyBytes:  1024,
 		AllowHost:     func(h string) bool { return h == f.host() },
+		AllowHTTP:     true,
 		Sleep: func(_ context.Context, d time.Duration) error {
 			mu.Lock()
 			defer mu.Unlock()
@@ -262,6 +263,12 @@ func TestCanceledContext(t *testing.T) {
 }
 
 func TestRetryAfterParsing(t *testing.T) {
+	// A huge value is capped, not overflowed into a short wait.
+	for _, v := range []string{"9300000000", "18446744074", "99999999999999999999"} {
+		if d := retryAfter(v); d != 0 && d < time.Hour {
+			t.Errorf("retryAfter(%s) = %v", v, d)
+		}
+	}
 	if retryAfter("") != 0 || retryAfter("abc") != 0 || retryAfter("5") != 5*time.Second {
 		t.Error("seconds form")
 	}
@@ -277,3 +284,14 @@ func TestRetryAfterParsing(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// The documentation sites are fetched over HTTPS only.
+func TestFetchRefusesPlainHTTP(t *testing.T) {
+	src := NewHTTP(HTTPConfig{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		t.Errorf("request to %s", r.URL)
+		return nil, errors.New("no requests")
+	})})
+	if _, err := src.Fetch(context.Background(), Request{URL: "http://docs.tenable.com/nessus/Content/Install.htm"}); err == nil || !strings.Contains(err.Error(), "not an https URL") {
+		t.Errorf("err = %v", err)
+	}
+}

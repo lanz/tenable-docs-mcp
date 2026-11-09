@@ -37,6 +37,9 @@ type HTTPConfig struct {
 	Timeout time.Duration
 	// AllowHost decides which hosts may be fetched (default: the documentation sites).
 	AllowHost func(host string) bool
+	// AllowHTTP allows plain-HTTP addresses, for tests; the documentation sites are
+	// fetched over HTTPS only.
+	AllowHTTP bool
 	// Transport carries the requests (default: http.DefaultTransport, which uses
 	// HTTPS_PROXY and the operating system's certificates).
 	Transport http.RoundTripper
@@ -111,8 +114,8 @@ func NewHTTP(cfg HTTPConfig) *HTTPSource {
 // Fetch gets one document. A 404 or 410 returns the response with ErrNotFound.
 func (s *HTTPSource) Fetch(ctx context.Context, req Request) (*Response, error) {
 	u, err := url.Parse(req.URL)
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
-		return nil, fmt.Errorf("fetch %q: not an http(s) URL", req.URL)
+	if err != nil || u.Scheme != "https" && !(u.Scheme == "http" && s.cfg.AllowHTTP) {
+		return nil, fmt.Errorf("fetch %q: not an https URL", req.URL)
 	}
 	if !s.cfg.AllowHost(u.Hostname()) {
 		return nil, fmt.Errorf("fetch %s: %w", u.Redacted(), ErrHostNotAllowed)
@@ -215,13 +218,17 @@ func (s *HTTPSource) attempt(ctx context.Context, u *url.URL, req Request) (*Res
 	}
 }
 
+// maxRetrySeconds caps a Retry-After at about 68 years, far beyond any MaxRetryAfter.
+const maxRetrySeconds = 1<<31 - 1
+
 // retryAfter parses a Retry-After header: seconds, or an HTTP date. Zero means none.
 func retryAfter(v string) time.Duration {
 	if v == "" {
 		return 0
 	}
 	if secs, err := strconv.Atoi(v); err == nil && secs >= 0 {
-		return time.Duration(secs) * time.Second
+		// Cap it before multiplying, which would overflow into a short wait.
+		return time.Duration(min(secs, maxRetrySeconds)) * time.Second
 	}
 	if t, err := http.ParseTime(v); err == nil {
 		if d := time.Until(t); d > 0 {
