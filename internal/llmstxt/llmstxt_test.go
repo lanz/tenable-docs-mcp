@@ -105,3 +105,17 @@ func TestWriteTranslated(t *testing.T) {
 		t.Error("a site without text should fail")
 	}
 }
+
+func TestProductHeading(t *testing.T) {
+	for product, want := range map[string]string{
+		"Vulnerability Management": "Tenable One Vulnerability Management",
+		"Exposure Management":      "Tenable One Exposure Management",
+		"Identity Exposure":        "Tenable Identity Exposure",
+		"Nessus":                   "Tenable Nessus",
+		"Tenable Core":             "Tenable Core",
+	} {
+		if got := productHeading(product); got != want {
+			t.Errorf("%s: %q, want %q", product, got, want)
+		}
+	}
+}

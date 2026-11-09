@@ -105,10 +105,21 @@ func typeRank(t string) int {
 	return len(guideTypes)
 }
 
-// productHeading is a product's section heading: its name, with Tenable.
+// tenableOne lists the products that are part of Tenable One, the cloud platform, whose
+// headings say so, as their guides' names do. Identity Exposure isn't one: it has a
+// SaaS edition in Tenable One and an on-premises edition, and its heading covers both.
+var tenableOne = map[string]bool{
+	"Vulnerability Management": true, "Web App Scanning": true, "Attack Surface Management": true,
+	"OT Exposure": true, "AI Exposure": true, "Cloud Exposure": true, "Exposure Management": true,
+}
+
+// productHeading is a product's section heading: its name, with Tenable or Tenable One.
 func productHeading(product string) string {
-	if strings.HasPrefix(product, "Tenable") {
+	switch {
+	case strings.HasPrefix(product, "Tenable"):
 		return product
+	case tenableOne[product]:
+		return "Tenable One " + product
 	}
 	return "Tenable " + product
 }
