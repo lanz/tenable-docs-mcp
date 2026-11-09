@@ -227,3 +227,34 @@ func TestVersionReportsUpdate(t *testing.T) {
 		t.Errorf("doctor:\n%s", out)
 	}
 }
+
+// index build -index and index import wait their turn with the updater and the crawler.
+func TestIndexCommandsTakeTheLock(t *testing.T) {
+	snap := filepath.Join(t.TempDir(), "snapshot")
+	if code, _, errOut := runCmd("index", "build", "-source", testSources(t), "-out", snap); code != 0 {
+		t.Fatalf("build = %d %s", code, errOut)
+	}
+	ixDir := filepath.Join(t.TempDir(), "index")
+	if err := os.MkdirAll(ixDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	l, err := published.Lock(ixDir, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"index", "build", "-source", testSources(t), "-index", ixDir},
+		{"index", "import", "-index", ixDir, snap},
+	} {
+		if code, _, errOut := runCmd(args...); code != 1 || !strings.Contains(errOut, "another tenable-docs-mcp is updating") {
+			t.Errorf("%v = %d %q", args[:2], code, errOut)
+		}
+	}
+	l.Release()
+	if code, _, errOut := runCmd("index", "import", "-index", ixDir, snap); code != 0 {
+		t.Errorf("after release = %d %s", code, errOut)
+	}
+	if _, err := os.Stat(filepath.Join(ixDir, "update.lock")); !os.IsNotExist(err) {
+		t.Errorf("import left its lock: %v", err)
+	}
+}

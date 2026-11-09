@@ -19,6 +19,7 @@ package published
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -26,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -75,6 +77,8 @@ type Updater struct {
 	Progress func(msg string)
 	// Now is the clock (default time.Now).
 	Now func() time.Time
+
+	lock *IndexLock // held during Update, kept fresh as it reports progress
 }
 
 // Result says what an update did.
@@ -101,6 +105,9 @@ func (u *Updater) now() time.Time {
 }
 
 func (u *Updater) progress(format string, args ...any) {
+	if u.lock != nil {
+		u.lock.Touch()
+	}
 	if u.Progress != nil {
 		u.Progress(fmt.Sprintf(format, args...))
 	}
@@ -116,11 +123,39 @@ func (u *Updater) baseURL() string {
 	return u.URL
 }
 
+// client is the HTTP client, refusing redirects off the snapshot's host unless the
+// caller's client sets its own policy.
 func (u *Updater) client() *http.Client {
+	c := &http.Client{Timeout: 5 * time.Minute}
 	if u.Client != nil {
-		return u.Client
+		c2 := *u.Client
+		c = &c2
 	}
-	return &http.Client{Timeout: 5 * time.Minute}
+	if c.CheckRedirect == nil {
+		c.CheckRedirect = sameHostRedirect(u.baseURL())
+	}
+	return c
+}
+
+// maxRedirects is how many redirects a download follows.
+const maxRedirects = 10
+
+// sameHostRedirect allows redirects only to HTTPS on the snapshot's own host, so a
+// redirect can't send the download to plain HTTP or to another server.
+func sameHostRedirect(base string) func(*http.Request, []*http.Request) error {
+	host := ""
+	if b, err := url.Parse(base); err == nil {
+		host = strings.ToLower(b.Hostname())
+	}
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= maxRedirects {
+			return fmt.Errorf("more than %d redirects", maxRedirects)
+		}
+		if req.URL.Scheme != "https" || !strings.EqualFold(req.URL.Hostname(), host) {
+			return fmt.Errorf("refusing a redirect to %s: downloads stay on https://%s", req.URL.Redacted(), host)
+		}
+		return nil
+	}
 }
 
 // errMissing is a shard file the server doesn't have.
@@ -135,7 +170,8 @@ func (u *Updater) Update(ctx context.Context) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	defer l.Release()
+	u.lock = l
+	defer func() { l.Release(); u.lock = nil }()
 	res, err := u.update(ctx)
 	var me errMissing
 	if errors.As(err, &me) {
@@ -147,7 +183,7 @@ func (u *Updater) Update(ctx context.Context) (Result, error) {
 	st.URL = u.baseURL()
 	if err != nil {
 		if ctx.Err() == nil {
-			st.LastError, st.ErrorAt = err.Error(), u.now().UTC().Format(time.RFC3339)
+			st.LastError, st.ErrorAt = clipError(err.Error()), u.now().UTC().Format(time.RFC3339)
 			_ = WriteState(u.Index.Dir, st)
 		}
 		return res, err
@@ -433,20 +469,33 @@ const staleLock = time.Hour
 // IndexLock is the index folder's update lock, held while one process updates it.
 type IndexLock struct {
 	path    string
+	token   string
 	touched time.Time
 }
 
 // Lock takes the index folder's update lock, so only one process updates it at a time.
 // A lock file older than an hour is taken to be left by a process that stopped; a
-// long update keeps its lock fresh with Touch.
+// long update keeps its lock fresh with Touch. Each lock carries a random token, so a
+// process whose lock was taken over can't release the new holder's.
 func Lock(dir string, now time.Time) (*IndexLock, error) {
 	path := filepath.Join(dir, lockFile)
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return nil, err
+	}
+	token := hex.EncodeToString(b[:])
 	for range 2 {
 		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
-			fmt.Fprintf(f, "%d %s\n", os.Getpid(), now.UTC().Format(time.RFC3339))
-			f.Close()
-			return &IndexLock{path: path, touched: time.Now()}, nil
+			_, werr := fmt.Fprintf(f, "%d %s %s\n", os.Getpid(), now.UTC().Format(time.RFC3339), token)
+			if cerr := f.Close(); werr == nil {
+				werr = cerr
+			}
+			if werr != nil {
+				_ = os.Remove(path)
+				return nil, werr
+			}
+			return &IndexLock{path: path, token: token, touched: time.Now()}, nil
 		}
 		if !errors.Is(err, os.ErrExist) {
 			return nil, err
@@ -456,7 +505,13 @@ func Lock(dir string, now time.Time) (*IndexLock, error) {
 		if serr != nil || time.Since(info.ModTime()) < staleLock {
 			return nil, ErrBusy
 		}
-		_ = os.Remove(path)
+		// Take over a stale lock by renaming it first: only one process's rename
+		// succeeds, so two processes can't both remove it and both take the lock.
+		stale := path + "." + token + ".stale"
+		if err := os.Rename(path, stale); err != nil {
+			return nil, ErrBusy
+		}
+		_ = os.Remove(stale)
 	}
 	return nil, ErrBusy
 }
@@ -470,5 +525,21 @@ func (l *IndexLock) Touch() {
 	_ = os.Chtimes(l.path, l.touched, l.touched)
 }
 
-// Release gives up the lock.
-func (l *IndexLock) Release() { _ = os.Remove(l.path) }
+// Release gives up the lock, if it's still this one's: after a takeover, the file is
+// another process's.
+func (l *IndexLock) Release() {
+	data, err := os.ReadFile(l.path)
+	if err != nil || !strings.Contains(string(data), " "+l.token) {
+		return
+	}
+	_ = os.Remove(l.path)
+}
+
+// clipError shortens an error for the state file, which every status check reads and
+// shows: an error can quote a value from a hostile snapshot at any length.
+func clipError(s string) string {
+	if r := []rune(s); len(r) > 500 {
+		return string(r[:500]) + "…"
+	}
+	return s
+}

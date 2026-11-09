@@ -92,7 +92,7 @@ func doctor(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	// The network.
 	for _, u := range doctorURLs {
-		checkURL(ctx, u, ok, warn, bad)
+		checkURL(ctx, indexURL(u), ok, warn, bad)
 	}
 
 	// The binary, as client configs will use it.
@@ -119,6 +119,19 @@ func doctor(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// indexURL is u, unless it's the default manifest and TDM_INDEX_URL names another
+// https:// folder, which is what the server downloads from.
+func indexURL(u string) string {
+	v := strings.TrimSpace(os.Getenv("TDM_INDEX_URL"))
+	if u != published.DefaultURL+"manifest.json" || !strings.HasPrefix(v, "https://") {
+		return u
+	}
+	if !strings.HasSuffix(v, "/") {
+		v += "/"
+	}
+	return v + "manifest.json"
 }
 
 func checkIndex(d string, ok, warn, bad func(string, ...any)) {
