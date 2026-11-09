@@ -2,7 +2,7 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server that answers questions from Tenable's product documentation, with a link to the exact section that supports each answer. It covers [docs.tenable.com](https://docs.tenable.com) and its seven translated sites, in every product, guide, and published version, and it runs locally as a single Go binary with an embedded SQLite index.
 
-> **Status: in progress toward 1.0.** The tools, prompts, resources, and completions described here work, and the server downloads the prebuilt index from docs.tenable.com on first run and keeps it up to date. When the prebuilt index can't be reached, it reads the live sites instead. There are no release binaries yet; build from source with Go 1.26 or later. Where this README describes 1.0 behavior, it says so.
+> **Status: in progress toward 1.0.** The tools, prompts, resources, and completions described here work, and the server downloads the prebuilt index from docs.tenable.com on first run and keeps it up to date. When the prebuilt index can't be reached, it reads the live sites instead. Until the first release, build from source with Go 1.26 or later; the other ways to install it, described below, start with 1.0. Where this README describes 1.0 behavior, it says so.
 
 For questions about Tenable's APIs, use the [Tenable Developer Portal MCP](https://developer.tenable.com/mcp), which developer.tenable.com hosts. The two are complementary: this server covers the product documentation, and that one covers the API reference.
 
@@ -51,22 +51,37 @@ Tenable Docs MCP indexes that structure and exposes it through MCP tools, so an 
 
 ## Install
 
-Until 1.0 ships release binaries, build from source with Go 1.26 or later:
+Each release has these ways to install it. Releases are on the [releases page](https://github.com/lanz/tenable-docs-mcp/releases), with a `SHA256SUMS` file, an SBOM, and build provenance attestations (`gh attestation verify FILE --repo lanz/tenable-docs-mcp`).
+
+### Claude Desktop extension
+
+Download `tenable-docs-mcp_<version>.mcpb` from the release, and open it, or drag it onto Claude Desktop's **Settings > Extensions**. Claude Desktop installs it and adds the server; there's nothing to configure. The extension holds a binary for each platform: a universal macOS binary for Apple silicon and Intel, Windows (x64, which Windows on Arm runs too), and Linux (x64).
+
+### A binary
+
+Download the archive for your platform (macOS, Linux, or Windows; x64 or Arm), unpack it, and put `tenable-docs-mcp` somewhere on your path. Then set up your client (see [Connect it to an MCP client](#connect-it-to-an-mcp-client)); `tenable-docs-mcp config` prints the settings.
+
+### A container image
 
 ```bash
-git clone https://github.com/lanz/tenable-docs-mcp
-cd tenable-docs-mcp
-go build ./cmd/tenable-docs-mcp
-./tenable-docs-mcp version
+docker run -i --rm --mount type=volume,src=tenable-docs-mcp,dst=/data ghcr.io/lanz/tenable-docs-mcp
 ```
 
-Or install it into `$(go env GOPATH)/bin`:
+The image runs the server over stdio, as a user without privileges, and keeps the index (and any recorded questions) in the volume, so it's downloaded once rather than on every start. For a client, use `docker` as the command and the rest as its arguments. The image is built for x64 and Arm Linux.
+
+### The MCP Registry
+
+The server is listed in the [MCP Registry](https://registry.modelcontextprotocol.io) as `io.github.lanz/tenable-docs-mcp`, with the extension and the container image, so clients and directories that read the registry can install it.
+
+### From source
+
+With Go 1.26 or later:
 
 ```bash
 go install github.com/lanz/tenable-docs-mcp/cmd/tenable-docs-mcp@latest
 ```
 
-A build from a Git clone reports a version from its commit, such as `v0.0.0-20261107200239-5f52e6e8e77f`; `go install …@vX.Y.Z` reports the release.
+Or build a clone with `go build ./cmd/tenable-docs-mcp`. A build from a clone reports a version from its commit, such as `v0.0.0-20261107200239-5f52e6e8e77f`; `go install …@vX.Y.Z` reports the release.
 
 ### Getting an index
 
