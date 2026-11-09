@@ -613,6 +613,7 @@ The optional HTTP transport is for clients on the same machine:
 - Requests whose `Host` header isn't a loopback name are rejected, which blocks DNS rebinding.
 - Cross-origin browser requests are refused, so a web page can't drive a local server.
 - It sets a 10-second header read timeout, a 2-minute idle timeout, and a 64 KiB header limit. There's no write timeout, because streamed responses can stay open.
+- It has no authentication: any program or user on the machine can connect, as with any local server, and use every tool, including the feedback and gap forms, which the connecting client answers. On a computer you share with other users, use stdio, which only the client that started the server can reach.
 
 ### Input handling
 
