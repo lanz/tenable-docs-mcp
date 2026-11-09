@@ -6,6 +6,7 @@ package published
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"net/http"
@@ -665,5 +666,44 @@ func TestUpdateRecordsHistory(t *testing.T) {
 	cs := history()
 	if len(cs) != 1 || cs[0].Change != "updated" || len(cs[0].Sections) != 1 || !slices.Contains(cs[0].Sections[0].Added, "新しい段落") {
 		t.Errorf("history = %+v", cs)
+	}
+}
+
+// An update records the newest release the snapshot names, and forgets it when a
+// later snapshot doesn't name one.
+func TestUpdateRecordsLatestRelease(t *testing.T) {
+	dir, _ := makeSnapshot(t, "")
+	path := filepath.Join(dir, snapshot.ManifestFile)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := snapshot.ParseManifest(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.LatestRelease = "v1.1.0"
+	named, _ := json.Marshal(m)
+	if err := os.WriteFile(path, named, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := newServer(t, dir)
+	ix := openIndex(t)
+	u := updater(s, ix)
+	res, err := u.Update(ctx)
+	if err != nil || res.LatestRelease != "v1.1.0" {
+		t.Fatalf("result = %+v, %v", res, err)
+	}
+	if st, _ := ReadState(ix.Dir); st.LatestRelease != "v1.1.0" {
+		t.Errorf("state = %+v", st)
+	}
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := u.Update(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := ReadState(ix.Dir); st.LatestRelease != "" {
+		t.Errorf("state after a snapshot without one = %+v", st)
 	}
 }

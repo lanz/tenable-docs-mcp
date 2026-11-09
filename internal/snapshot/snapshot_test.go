@@ -303,3 +303,28 @@ func TestGuideNamesRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestManifestLatestRelease(t *testing.T) {
+	src, sites := source(t)
+	dir := filepath.Join(t.TempDir(), "snapshot")
+	w, err := NewWriter(dir, "tenable-docs-mcp v1.1.0", builtAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.LatestRelease = "v1.1.0"
+	if _, err := build.Run(ctx, build.Options{Source: src, Sites: sites}, w); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	m, err := ReadManifest(dir)
+	if err != nil || m.LatestRelease != "v1.1.0" {
+		t.Errorf("manifest = %+v, %v", m, err)
+	}
+	// Without one, the field is left out, as older snapshots have it.
+	_, plain := writeSnapshot(t)
+	if plain.LatestRelease != "" {
+		t.Errorf("latest release = %q", plain.LatestRelease)
+	}
+}

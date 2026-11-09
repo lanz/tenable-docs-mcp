@@ -52,8 +52,13 @@ type Manifest struct {
 	// BuiltAt is when the snapshot was built (RFC 3339, UTC).
 	BuiltAt string `json:"built_at"`
 	// Generator is the program and version that built it.
-	Generator string  `json:"generator"`
-	Shards    []Shard `json:"shards"`
+	Generator string `json:"generator"`
+	// LatestRelease is the newest release of the server (v1.2.3), so servers that
+	// download the snapshot can tell their users when a newer one is available. A
+	// snapshot built by a release says which it is; one built by a prerelease or a
+	// development build leaves it out. Servers that don't know the field ignore it.
+	LatestRelease string  `json:"latest_release,omitempty"`
+	Shards        []Shard `json:"shards"`
 }
 
 // Shard describes one shard's file.
@@ -86,6 +91,9 @@ type tocRecord struct {
 
 // Writer writes a snapshot. It's a build.Sink.
 type Writer struct {
+	// LatestRelease, when set, goes in the manifest's latest_release.
+	LatestRelease string
+
 	dir       string
 	generator string
 	builtAt   time.Time
@@ -170,7 +178,7 @@ func (w *Writer) Toc(_ context.Context, k index.Key, g site.Guide, toc []*site.T
 // Close finishes each shard's file and writes the manifest, last, so a reader never
 // sees a manifest for files that aren't there.
 func (w *Writer) Close() (Manifest, error) {
-	m := Manifest{Format: Format, BuiltAt: w.builtAt.Format(time.RFC3339), Generator: w.generator}
+	m := Manifest{Format: Format, BuiltAt: w.builtAt.Format(time.RFC3339), Generator: w.generator, LatestRelease: w.LatestRelease}
 	keys := make([]index.Key, 0, len(w.files))
 	for k := range w.files {
 		keys = append(keys, k)

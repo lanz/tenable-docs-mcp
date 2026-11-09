@@ -149,6 +149,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return indexCmd(ctx, rest, stdout, stderr)
 	case "version":
 		fmt.Fprintln(stdout, server.Name, version.Get())
+		if u, ok := updateAvailable(""); ok {
+			fmt.Fprintln(stdout, u.Message())
+		}
 		return 0
 	case "help":
 		fmt.Fprint(stdout, usage)
@@ -299,4 +302,18 @@ func serveHTTP(ctx context.Context, hs *http.Server, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// updateAvailable reports whether the last update check, recorded in the index folder,
+// found a newer release than this one. It makes no request.
+func updateAvailable(dir string) (version.Update, bool) {
+	d, err := indexDir(dir)
+	if err != nil {
+		return version.Update{}, false
+	}
+	st, err := published.ReadState(d)
+	if err != nil {
+		return version.Update{}, false
+	}
+	return version.Available(st.LatestRelease, version.Get())
 }

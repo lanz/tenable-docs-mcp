@@ -74,10 +74,15 @@ func New(opts Options) *mcp.Server {
 			env.FetchPage = opts.OnDemand.Page
 		}
 	}
+	instr := instructions
+	if u, ok := env.UpdateAvailable(); ok {
+		instr += "\n\nTell the user, once: " + u.Message()
+	}
 	s := mcp.NewServer(
 		&mcp.Implementation{Name: Name, Title: "Tenable Docs MCP", Version: version.Get(), WebsiteURL: ProjectURL},
-		&mcp.ServerOptions{Instructions: instructions, CompletionHandler: env.Complete},
+		&mcp.ServerOptions{Instructions: instr, CompletionHandler: env.Complete},
 	)
+	s.AddReceivingMiddleware(env.UpdateNote())
 	tools.Register(s, env)
 	if w := opts.Updates; w != nil {
 		env.Updates = w.Status

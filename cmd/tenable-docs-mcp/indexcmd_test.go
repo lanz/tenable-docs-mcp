@@ -14,7 +14,9 @@ import (
 
 	"github.com/lanz/tenable-docs-mcp/internal/build"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
+	"github.com/lanz/tenable-docs-mcp/internal/published"
 	"github.com/lanz/tenable-docs-mcp/internal/snapshot"
+	"github.com/lanz/tenable-docs-mcp/internal/version"
 )
 
 // testSources returns -source for the build package's made-up sites.
@@ -183,5 +185,45 @@ func TestIndexLLMs(t *testing.T) {
 	}
 	if code, _, _ := runCmd("index", "llms", "-index", filepath.Join(t.TempDir(), "empty"), "-out", out); code != 1 {
 		t.Error("an empty index should fail")
+	}
+}
+
+// A release build names itself in the snapshot's manifest; a prerelease or a
+// development build doesn't.
+func TestIndexBuildLatestRelease(t *testing.T) {
+	old := version.Version
+	t.Cleanup(func() { version.Version = old })
+	for v, want := range map[string]string{"v1.2.3": "v1.2.3", "v1.2.3-rc.1": "", "": ""} {
+		version.Version = v
+		snap := filepath.Join(t.TempDir(), "snapshot")
+		if code, out, errOut := runCmd("index", "build", "-source", testSources(t), "-sites", "jp", "-out", snap); code != 0 {
+			t.Fatalf("%q: build = %d\n%s\n%s", v, code, out, errOut)
+		}
+		m, err := snapshot.ReadManifest(snap)
+		if err != nil || m.LatestRelease != want {
+			t.Errorf("%q: latest release = %q, %v", v, m.LatestRelease, err)
+		}
+	}
+}
+
+// version and doctor say when the last update check found a newer release.
+func TestVersionReportsUpdate(t *testing.T) {
+	old := version.Version
+	version.Version = "v1.0.0"
+	t.Cleanup(func() { version.Version = old })
+	dir := t.TempDir()
+	t.Setenv("TDM_INDEX_DIR", dir)
+	if _, out, _ := runCmd("version"); strings.Contains(out, "is available") {
+		t.Errorf("version before any check: %s", out)
+	}
+	if err := published.WriteState(dir, published.State{LatestRelease: "v1.1.0", CheckedAt: "2026-11-09T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, _ := runCmd("version"); code != 0 || !strings.Contains(out, "tenable-docs-mcp v1.0.0\nTenable Docs MCP v1.1.0 is available") {
+		t.Errorf("version: %d %s", code, out)
+	}
+	_, out, _ := runCmd("doctor", "-index", dir)
+	if !strings.Contains(out, "Tenable Docs MCP v1.1.0 is available; this is v1.0.0") {
+		t.Errorf("doctor:\n%s", out)
 	}
 }

@@ -7,10 +7,15 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/lanz/tenable-docs-mcp/internal/index"
+	"github.com/lanz/tenable-docs-mcp/internal/published"
+	"github.com/lanz/tenable-docs-mcp/internal/version"
 )
 
 // connect starts the server on an in-memory transport and returns a connected client.
@@ -114,5 +119,54 @@ func TestIndexStatus(t *testing.T) {
 	}
 	if out.Server != Name || out.Version == "" || out.Index.State != "not built" {
 		t.Errorf("index_status = %s", raw)
+	}
+}
+
+// A server older than the release the last update check found says so in its
+// instructions and in its first tool result.
+func TestUpdateInInstructions(t *testing.T) {
+	old := version.Version
+	version.Version = "v1.0.0"
+	t.Cleanup(func() { version.Version = old })
+	ix, err := index.Open(filepath.Join(t.TempDir(), "index"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ix.Close() })
+	if err := published.WriteState(ix.Dir, published.State{LatestRelease: "v1.1.0"}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	serverT, clientT := mcp.NewInMemoryTransports()
+	ss, err := New(Options{Index: ix}).Connect(ctx, serverT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ss.Close() })
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil).Connect(ctx, clientT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+	if in := cs.InitializeResult().Instructions; !strings.Contains(in, "Tell the user, once: Tenable Docs MCP v1.1.0 is available; this is v1.0.0") {
+		t.Errorf("instructions lack the update:\n%s", in)
+	}
+	r, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "index_status"})
+	if err != nil || r.IsError {
+		t.Fatalf("index_status = %v, %v", r, err)
+	}
+	var notes int
+	for _, c := range r.Content {
+		if tc, ok := c.(*mcp.TextContent); ok && strings.HasPrefix(tc.Text, "Note for the user (once):") {
+			notes++
+		}
+	}
+	if notes != 1 {
+		t.Errorf("first result has %d update notes", notes)
+	}
+
+	// Without a newer release, the instructions say nothing about one.
+	if in := connect(t).InitializeResult().Instructions; strings.Contains(in, "is available") {
+		t.Errorf("instructions mention an update:\n%s", in)
 	}
 }
