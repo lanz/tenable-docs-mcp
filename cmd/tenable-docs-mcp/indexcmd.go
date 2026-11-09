@@ -172,6 +172,11 @@ func indexBuild(ctx context.Context, args []string, stdout, stderr io.Writer) in
 			fmt.Fprintln(stderr, "index build:", err)
 			return 1
 		}
+		// A release build advertises itself, so servers that download the snapshot can
+		// tell their users it's available.
+		if v := version.Get(); version.IsRelease(v) {
+			w.LatestRelease = v
+		}
 		if rep, err = build.Run(ctx, opts, w); err != nil {
 			w.Abort()
 			fmt.Fprintln(stderr, "index build:", err)

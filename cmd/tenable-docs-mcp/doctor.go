@@ -82,6 +82,9 @@ func doctor(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		if st.Source == published.SourceLive {
 			warn("the index is kept up to date from the live sites, since the published snapshot couldn't be reached")
 		}
+		if u, ok := version.Available(st.LatestRelease, version.Get()); ok {
+			warn("%s", u.Message())
+		}
 	}
 	if v := strings.TrimSpace(os.Getenv("TDM_INDEX_URL")); strings.EqualFold(v, "off") {
 		warn("automatic updates are off (TDM_INDEX_URL=off)")

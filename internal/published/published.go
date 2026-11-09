@@ -81,6 +81,8 @@ type Updater struct {
 type Result struct {
 	// BuiltAt is when the snapshot was built.
 	BuiltAt string `json:"built_at"`
+	// LatestRelease is the newest server release the snapshot names, if any.
+	LatestRelease string `json:"latest_release,omitempty"`
 	// Downloaded lists the shard files downloaded.
 	Downloaded []string `json:"downloaded,omitempty"`
 	// Imported lists the shards rebuilt from the snapshot.
@@ -151,6 +153,7 @@ func (u *Updater) Update(ctx context.Context) (Result, error) {
 		return res, err
 	}
 	st.CheckedAt, st.BuiltAt, st.LastError, st.ErrorAt = u.now().UTC().Format(time.RFC3339), res.BuiltAt, "", ""
+	st.LatestRelease = res.LatestRelease
 	st.Source = SourcePublished
 	return res, WriteState(u.Index.Dir, st)
 }
@@ -171,7 +174,7 @@ func (u *Updater) update(ctx context.Context) (Result, error) {
 	if err != nil {
 		return res, err
 	}
-	res.BuiltAt = m.BuiltAt
+	res.BuiltAt, res.LatestRelease = m.BuiltAt, m.LatestRelease
 
 	var todo []snapshot.Shard
 	for _, sh := range m.Shards {
@@ -387,6 +390,9 @@ type State struct {
 	CrawledAt    string `json:"crawled_at,omitempty"`
 	CrawlError   string `json:"crawl_error,omitempty"`
 	CrawlErrorAt string `json:"crawl_error_at,omitempty"`
+	// LatestRelease is the newest server release the last checked snapshot named,
+	// if it named one, for telling the user an update is available.
+	LatestRelease string `json:"latest_release,omitempty"`
 }
 
 // Where the index was last updated from.

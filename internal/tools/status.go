@@ -15,6 +15,7 @@ import (
 
 	"github.com/lanz/tenable-docs-mcp/internal/index"
 	"github.com/lanz/tenable-docs-mcp/internal/published"
+	"github.com/lanz/tenable-docs-mcp/internal/version"
 )
 
 // Info describes the running server, for index_status.
@@ -64,7 +65,9 @@ type statusOut struct {
 	GoVersion string       `json:"go_version"`
 	Index     indexState   `json:"index"`
 	Updates   updatesState `json:"updates"`
-	Note      string       `json:"note,omitempty"`
+	// Update is set when a newer release of the server is available.
+	Update *version.Update `json:"update,omitempty" jsonschema:"set when a newer release of this server is available: tell the user, with its link"`
+	Note   string          `json:"note,omitempty"`
 }
 
 func registerStatus(s *mcp.Server, env *Env) {
@@ -126,6 +129,9 @@ func (e *Env) status(ctx context.Context) (statusOut, string, error) {
 	default:
 		out.Note = "The documentation index isn't built yet, and automatic updates are off; run tenable-docs-mcp index pull to download it."
 	}
+	if u, ok := e.UpdateAvailable(); ok {
+		out.Update = &u
+	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s %s; index %s", out.Server, out.Version, out.Index.State)
 	if out.Index.Folder != "" {
@@ -159,6 +165,9 @@ func (e *Env) status(ctx context.Context) (statusOut, string, error) {
 	}
 	if out.Note != "" {
 		b.WriteString("\n" + out.Note)
+	}
+	if out.Update != nil {
+		b.WriteString("\n" + out.Update.Message())
 	}
 	return out, b.String(), nil
 }

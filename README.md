@@ -83,6 +83,25 @@ go install github.com/lanz/tenable-docs-mcp/cmd/tenable-docs-mcp@latest
 
 Or build a clone with `go build ./cmd/tenable-docs-mcp`. A build from a clone reports a version from its commit, such as `v0.0.0-20261107200239-5f52e6e8e77f`; `go install …@vX.Y.Z` reports the release.
 
+### Updating
+
+The documentation index updates itself every day, whatever version of the server you run. A new release of the server brings new features and fixes; the server tells you when one is out. The daily index download names the newest release, so the server finds out without asking anyone else, and then:
+
+- `index_status` and the `tenable-docs://status` resource include an `update` with the new version and its link,
+- `tenable-docs-mcp version` and `tenable-docs-mcp doctor` print a line about it, and
+- your assistant is told, once per session, so it can pass it on.
+
+To update, install the new release the way you installed this one:
+
+| Installed with | Update by |
+| --- | --- |
+| The Claude Desktop extension | Downloading the new `.mcpb` from the release and opening it |
+| A release archive | Downloading the new archive and replacing the binary |
+| `go install` | Running `go install github.com/lanz/tenable-docs-mcp/cmd/tenable-docs-mcp@latest` again |
+| The container image | `docker pull ghcr.io/lanz/tenable-docs-mcp` |
+
+The server never updates itself. Prereleases aren't announced, and a build from a clone doesn't report updates.
+
 ### Getting an index
 
 There's nothing to set up. The first time the server starts, it downloads the prebuilt index snapshot from `https://docs.tenable.com/mcp/index/v1/` in the background and builds the local index from it: about 21,200 pages in 13 shards, 12 MB to download, and a local index of about 380 MB, in under a minute. Until it's done, `index_status` reports `downloading`, and the search and reading tools say the index is downloading.
@@ -250,7 +269,7 @@ The server registers 18 tools. Each returns structured output (with a JSON schem
 | `verify_citations` | Checks every docs link in an answer or draft (Markdown, HTML, or plain text, up to 200,000 characters). See [Citations and verify_citations](#citations-and-verify_citations). | Only with `check_live` |
 | `report_gap` | Records a question the docs didn't answer in a local file only the user can read. If the client can show forms, it then offers the user a form to send the question to Tenable's documentation team. | Only if the user accepts the form |
 | `open_feedback_form` | Shows the user a feedback form for a docs page. The assistant chooses only the page and whether the user found it helpful; the user writes the comment, and there's no argument for one. | Only if the user accepts the form |
-| `index_status` | The server's version, Go version, index folder, and each shard's pages, sections, schema version, build time, and last-indexed time; and the automatic updates: where they come from, the last check, when the snapshot was built, any update in progress, and the last error. | No |
+| `index_status` | The server's version, Go version, index folder, and each shard's pages, sections, schema version, build time, and last-indexed time; the automatic updates: where they come from, the last check, when the snapshot was built, any update in progress, and the last error; and whether a newer release of the server is available. | No |
 | `refresh_index` | Updates given pages (up to 500), or every page of a guide and its table of contents, from the live sites. Reports checked, updated, unchanged, removed, and skipped pages, with progress notifications when the client asks for them. | Yes |
 
 ## Prompts, resources, and completions
@@ -480,6 +499,7 @@ The manifest lists every shard:
   "format": 1,
   "built_at": "2026-11-01T06:00:00Z",
   "generator": "tenable-docs-mcp v1.0.0",
+  "latest_release": "v1.0.0",
   "shards": [
     {
       "key": "en-current",
@@ -495,7 +515,7 @@ The manifest lists every shard:
 }
 ```
 
-(The values above are illustrative.)
+(The values above are illustrative.) `latest_release` names the newest release of the server, so servers that download the snapshot can tell their users about it. A snapshot built by a release names that release; one built by a prerelease or from a commit leaves the field out. Older servers ignore it, so it didn't change the format.
 
 Before importing, `index import` and `index pull` check that the manifest's format is one it reads, that each shard's site is known, and that each file name matches its key and checksum. It then verifies each file's size and SHA-256 before decompressing it, caps decompression memory at 512 MiB, checks that every page belongs to the shard it's in, and checks the page count against the manifest. `index verify` runs the size and checksum checks alone.
 
