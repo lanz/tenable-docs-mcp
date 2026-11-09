@@ -148,41 +148,23 @@ func (r *Refresher) refreshShard(ctx context.Context, k index.Key, urls []string
 		return err
 	}
 	type fetched struct {
-		info *index.PageInfo
-		resp *site.Response
-		gone bool
+		info  *index.PageInfo
+		resp  *site.Response
+		gone  bool
+		moved string // where the page redirects to
 	}
-	var work []fetched
+	// Read what the index has for each page, then fetch with no lock held: a fetch can
+	// take minutes, and holding the shard meanwhile would stall a waiting swap, and so
+	// every other tool call.
+	infos := make([]*index.PageInfo, len(urls))
 	err = r.Index.With(k, func(sh *index.Shard) error {
-		for _, u := range urls {
-			// Each page counts once it's checked, or skipped.
-			tick(1)
+		for i, u := range urls {
 			info, ok, err := sh.PageInfo(ctx, u)
 			if err != nil {
 				return err
 			}
-			if !ok {
-				rep.Skipped++
-				continue
-			}
-			if pu, err := url.Parse(u); err != nil || !rules.Allowed(pu.Path) {
-				rep.Skipped++
-				continue
-			}
-			rep.Checked++
-			resp, err := r.Source.Fetch(ctx, site.Request{URL: u, ETag: info.ETag, LastModified: info.LastModified})
-			switch {
-			case errors.Is(err, site.ErrNotFound):
-				work = append(work, fetched{info: info, gone: true})
-			case err != nil:
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-				rep.Failed = append(rep.Failed, u+": "+err.Error())
-			case resp.NotModified:
-				rep.Unchanged++
-			default:
-				work = append(work, fetched{info: info, resp: resp})
+			if ok {
+				infos[i] = info
 			}
 		}
 		return nil
@@ -190,9 +172,53 @@ func (r *Refresher) refreshShard(ctx context.Context, k index.Key, urls []string
 	if err != nil {
 		return err
 	}
+	var work []fetched
+	for i, u := range urls {
+		// Each page counts once it's checked, or skipped.
+		tick(1)
+		info := infos[i]
+		if info == nil {
+			rep.Skipped++
+			continue
+		}
+		if pu, err := url.Parse(u); err != nil || !rules.Allowed(pu.EscapedPath()) {
+			rep.Skipped++
+			continue
+		}
+		rep.Checked++
+		resp, err := r.Source.Fetch(ctx, site.Request{URL: u, ETag: info.ETag, LastModified: info.LastModified})
+		switch {
+		case errors.Is(err, site.ErrNotFound):
+			work = append(work, fetched{info: info, gone: true})
+		case err != nil:
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			rep.Failed = append(rep.Failed, u+": "+err.Error())
+		case resp.URL != "" && strings.SplitN(resp.URL, "#", 2)[0] != u:
+			// The page moved. As in a crawl, the old address becomes a redirect, and
+			// the new one is indexed from its own sitemap entry.
+			work = append(work, fetched{info: info, moved: strings.SplitN(resp.URL, "#", 2)[0]})
+		case resp.NotModified:
+			rep.Unchanged++
+		default:
+			work = append(work, fetched{info: info, resp: resp})
+		}
+	}
 	return r.Index.With(k, func(sh *index.Shard) error {
 		return sh.Update(ctx, func(tx *index.Tx) error {
 			for _, w := range work {
+				if w.moved != "" {
+					if err := tx.PutRedirect(w.info.URL, w.moved); err != nil {
+						return err
+					}
+					if removed, err := tx.Remove(w.info.URL); err != nil {
+						return err
+					} else if removed {
+						rep.Removed++
+					}
+					continue
+				}
 				if w.gone {
 					if removed, err := tx.Remove(w.info.URL); err != nil {
 						return err

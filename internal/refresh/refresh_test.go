@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lanz/tenable-docs-mcp/internal/index"
 	"github.com/lanz/tenable-docs-mcp/internal/page"
@@ -184,5 +185,83 @@ func TestGuide(t *testing.T) {
 	rep, err = r.Guide(ctx, index.Key{Site: "en"}, "nessus")
 	if err != nil || rep.TocUpdated {
 		t.Errorf("no toc = %+v, %v", rep, err)
+	}
+}
+
+// movedSite redirects one page to another address.
+type movedSite struct {
+	*fakeSite
+	from, to string
+}
+
+func (m *movedSite) Fetch(ctx context.Context, req site.Request) (*site.Response, error) {
+	if req.URL == m.from {
+		return &site.Response{URL: m.to, Status: 200, Body: []byte(page1("Elsewhere", "Somewhere else."))}, nil
+	}
+	return m.fakeSite.Fetch(ctx, req)
+}
+
+// A page that now redirects becomes a redirect, as in a crawl, and the other page's
+// content isn't stored under its old address.
+func TestMovedPage(t *testing.T) {
+	ix, live := setup(t)
+	from := en + "nessus/Content/Changed.htm"
+	to := en + "nessus/Content/Elsewhere.htm"
+	r := &Refresher{Index: ix, Source: &movedSite{fakeSite: live, from: from, to: to + "#top"}}
+	rep, err := r.Pages(ctx, []string{from})
+	if err != nil || rep.Removed != 1 || rep.Updated != 0 {
+		t.Fatalf("report = %+v, %v", rep, err)
+	}
+	err = ix.With(index.Key{Site: "en"}, func(s *index.Shard) error {
+		if _, ok, _ := s.PageInfo(ctx, from); ok {
+			t.Error("the old address is still a page")
+		}
+		if got, ok, err := s.Redirect(ctx, from); err != nil || !ok || got != to {
+			t.Errorf("redirect = %q %v %v", got, ok, err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// installingSite installs a new build of the shard while a fetch is in progress.
+type installingSite struct {
+	*fakeSite
+	t       *testing.T
+	ix      *index.Index
+	blocked bool
+}
+
+func (s *installingSite) Fetch(ctx context.Context, req site.Request) (*site.Response, error) {
+	if strings.HasSuffix(req.URL, ".htm") && !s.blocked {
+		s.blocked = true
+		done := make(chan error, 1)
+		go func() {
+			b, err := s.ix.Build(index.Key{Site: "en"})
+			if err == nil {
+				err = s.ix.Install(b)
+			}
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if err != nil {
+				s.t.Errorf("install: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			s.t.Error("an install waited for a page fetch to finish")
+		}
+	}
+	return s.fakeSite.Fetch(ctx, req)
+}
+
+// Pages are fetched with no lock on the shard, so an update can be swapped in meanwhile.
+func TestFetchesDontHoldTheShard(t *testing.T) {
+	ix, live := setup(t)
+	r := &Refresher{Index: ix, Source: &installingSite{fakeSite: live, t: t, ix: ix}}
+	if _, err := r.Pages(ctx, []string{en + "nessus/Content/Changed.htm"}); err != nil {
+		t.Fatal(err)
 	}
 }
