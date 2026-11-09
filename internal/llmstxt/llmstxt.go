@@ -36,7 +36,7 @@ var texts = map[string]text{
 	},
 	"jp": {
 		Title:     "Tenable ドキュメント",
-		Summary:   "Tenable One および Tenable 製品のドキュメント: ユーザーガイド、ベストプラクティス、リファレンスガイド、統合ガイド、リリースノート。",
+		Summary:   "Tenable 製品ドキュメントの日本語版: ユーザーガイド、統合ガイド、リリースノートなど。",
 		Intro:     "各ガイドへのリンクは最初のページを指し、そのページの目次から残りのページにアクセスできます。翻訳されていないガイドは英語のドキュメントにあります。",
 		Other:     "その他のガイド",
 		Languages: "他の言語のドキュメント:",
@@ -44,7 +44,7 @@ var texts = map[string]text{
 	},
 	"zh-cn": {
 		Title:     "Tenable 文档",
-		Summary:   "Tenable One 及其他 Tenable 产品的文档：用户指南、最佳实践、参考指南、集成指南和版本说明。",
+		Summary:   "部分 Tenable 产品文档的简体中文版。",
 		Intro:     "每个指南链接到其首页，首页的目录链接到其余页面。未翻译的指南请参阅英文文档。",
 		Other:     "其他指南",
 		Languages: "其他语言的文档：",
@@ -52,7 +52,7 @@ var texts = map[string]text{
 	},
 	"zh-tw": {
 		Title:     "Tenable 文件",
-		Summary:   "Tenable One 及其他 Tenable 產品的文件：使用者指南、最佳做法、參考指南、整合指南和版本資訊。",
+		Summary:   "部分 Tenable 產品文件的繁體中文版。",
 		Intro:     "每份指南連結至其首頁，首頁的目錄連結至其餘頁面。未翻譯的指南請參閱英文文件。",
 		Other:     "其他指南",
 		Languages: "其他語言的文件：",
@@ -60,7 +60,7 @@ var texts = map[string]text{
 	},
 	"kr": {
 		Title:     "Tenable 문서",
-		Summary:   "Tenable One 및 기타 Tenable 제품 문서: 사용자 가이드, 모범 사례, 참조 가이드, 통합 가이드 및 릴리스 정보.",
+		Summary:   "Tenable 제품 문서 중 일부의 한국어 번역본입니다.",
 		Intro:     "각 가이드는 첫 페이지로 연결되며, 그 페이지의 목차에서 나머지 페이지로 이동할 수 있습니다. 번역되지 않은 가이드는 영어 문서를 참조하세요.",
 		Other:     "기타 가이드",
 		Languages: "다른 언어로 된 문서:",
@@ -68,7 +68,7 @@ var texts = map[string]text{
 	},
 	"fr": {
 		Title:     "Documentation Tenable",
-		Summary:   "Documentation de Tenable One et des autres produits Tenable : guides de l'utilisateur, meilleures pratiques, guides de référence et d'intégration, et notes de version.",
+		Summary:   "Une sélection de la documentation des produits Tenable, traduite en français.",
 		Intro:     "Chaque guide renvoie à sa première page, dont la table des matières mène aux autres. Les guides non traduits se trouvent dans la documentation en anglais.",
 		Other:     "Autres guides",
 		Languages: "La documentation dans d'autres langues :",
@@ -76,7 +76,7 @@ var texts = map[string]text{
 	},
 	"de": {
 		Title:     "Tenable-Dokumentation",
-		Summary:   "Dokumentation zu Tenable One und den weiteren Tenable-Produkten: Benutzerhandbücher, Best Practices, Referenz- und Integrationsleitfäden sowie Versionshinweise.",
+		Summary:   "Eine Auswahl der Tenable-Produktdokumentation in deutscher Übersetzung.",
 		Intro:     "Jeder Leitfaden verweist auf seine erste Seite, deren Inhaltsverzeichnis zu den übrigen führt. Nicht übersetzte Leitfäden finden Sie in der englischen Dokumentation.",
 		Other:     "Weitere Leitfäden",
 		Languages: "Die Dokumentation in anderen Sprachen:",
@@ -84,7 +84,7 @@ var texts = map[string]text{
 	},
 	"es": {
 		Title:     "Documentación de Tenable",
-		Summary:   "Documentación de Tenable One y del resto de productos de Tenable: guías del usuario, prácticas recomendadas, guías de referencia y de integración, y notas de la versión.",
+		Summary:   "Una selección de la documentación de los productos de Tenable, traducida al español.",
 		Intro:     "Cada guía enlaza con su primera página, cuya tabla de contenido lleva al resto. Las guías no traducidas están en la documentación en inglés.",
 		Other:     "Otras guías",
 		Languages: "La documentación en otros idiomas:",
