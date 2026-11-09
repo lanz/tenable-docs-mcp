@@ -105,8 +105,12 @@ func verifyLinks(ctx context.Context, args []string, stdin io.Reader, stdout, st
 
 // gapsCmd summarizes or clears the questions report_gap recorded.
 func gapsCmd(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "submit" {
+		return gapsSubmit(context.Background(), args[1:], stdin, stdout, stderr)
+	}
 	if len(args) == 0 || (args[0] != "export" && args[0] != "clear" && args[0] != "path") {
-		fmt.Fprintf(stderr, "Usage:\n  %s gaps export [-since YYYY-MM-DD] [-json] [-file FILE]\n  %s gaps clear -yes [-file FILE]\n  %s gaps path\n", server.Name, server.Name, server.Name)
+		fmt.Fprintf(stderr, "Usage:\n  %s gaps export [-since YYYY-MM-DD] [-json] [-file FILE]\n  %s gaps submit [-since YYYY-MM-DD] [-file FILE]\n  %s gaps clear -yes [-file FILE]\n  %s gaps path\n",
+			server.Name, server.Name, server.Name, server.Name)
 		return 2
 	}
 	sub := args[0]

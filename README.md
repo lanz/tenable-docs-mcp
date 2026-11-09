@@ -110,6 +110,8 @@ When `read_doc`, `outline`, or `related_pages` is given a docs page the index do
 
 The server speaks MCP over stdio by default, so a client runs it as a command with no arguments. Use the binary's full path. On Windows, use forward slashes in shell commands and doubled backslashes in JSON (`"C:\\tools\\tenable-docs-mcp.exe"`).
 
+`tenable-docs-mcp config` prints the settings below for Claude Code, Claude Desktop, VS Code, and Cursor, with this binary's path already in them and quoted correctly for each; `-client` picks one, and `-index` adds an index folder. It only prints, and never edits a client's files. `tenable-docs-mcp doctor` checks that everything the server needs is in place.
+
 ### Claude Code
 
 ```bash
@@ -482,12 +484,44 @@ Before importing, `index import` and `index pull` check that the manifest's form
 
 ## Command line
 
+### The tools, from a terminal
+
+Every tool that reads the docs has a command, for writers, support, quick checks, and scripts. A command runs the server in its own process and calls the tool through MCP, so its output is exactly what the tool gives an assistant: the tool's text, or, with `-json`, its structured output. Each tool argument is a flag (`guide_type` is `-guide-type`), flags can come anywhere among the words, and `-h` lists a command's flags.
+
+| Command | Runs | Words fill in |
+| --- | --- | --- |
+| `search QUESTION` | `search_docs` | `query` |
+| `read URL` | `read_doc` | `url` |
+| `outline URL` (or `outline -guide GUIDE`) | `outline` | `url` |
+| `browse GUIDE` | `browse_guide` | `guide` |
+| `related URL` | `related_pages` | `url` |
+| `products` | `list_products` | |
+| `setting SETTING` | `find_setting` | `query` |
+| `role TASK` | `required_role` | `task` |
+| `requirements QUESTION` | `requirements` | `query` |
+| `release-notes [WORDS]` | `release_notes` | `query` |
+| `term TERM` | `define_term` | `term` |
+| `status` | `index_status` | |
+
+```bash
+tenable-docs-mcp search install nessus on linux -product Nessus -limit 3
+tenable-docs-mcp read https://docs.tenable.com/nessus/Content/PortRequirements.htm#TenableNessus
+tenable-docs-mcp release-notes -product "Security Center" -since 2026-06 -json
+```
+
+A command exits with 0 when the tool found something, 1 when it found nothing or failed (or, for `status`, when the index isn't ready), and 2 on a usage error. Without a built index, a command says so and suggests `index pull`.
+
+### Other commands
+
 | Command | What it does |
 | --- | --- |
 | `tenable-docs-mcp` | Serve MCP over stdio (what clients run) |
 | `tenable-docs-mcp serve [-http ADDR] [-index DIR]` | Serve over stdio, or over streamable HTTP on a loopback `ADDR`, from the index in `DIR` |
+| `tenable-docs-mcp doctor [-index DIR]` | Check that the index opens, with the current schema and a folder only you can read; that the docs sites and the prebuilt index can be reached, saying so when a TLS-inspecting proxy is in the way; that your synonyms file reads; and that this program's path will work in client settings |
+| `tenable-docs-mcp config [-client NAME] [-index DIR]` | Print MCP client settings, ready to paste (see [Connect it to an MCP client](#connect-it-to-an-mcp-client)) |
 | `tenable-docs-mcp verify-links [-base URL] [-live] [-json] [-index DIR] FILE...` | Check the docs links in answers or drafts (`-` reads standard input) |
 | `tenable-docs-mcp gaps export [-since YYYY-MM-DD] [-json] [-file FILE]` | Summarize the recorded questions, grouped by product, as Markdown or JSON |
+| `tenable-docs-mcp gaps submit [-since YYYY-MM-DD] [-file FILE] [-index DIR]` | Send recorded questions to Tenable's documentation team, one at a time: each is shown, with the page it's about, and you send it, edit it first, or skip it; you see what will be sent before it goes. Sent questions are marked so they aren't offered again, and the sending limits are the same as the forms' |
 | `tenable-docs-mcp gaps clear -yes [-file FILE]` | Delete the recorded questions |
 | `tenable-docs-mcp gaps path` | Print where the questions are recorded |
 | `tenable-docs-mcp index pull [-sites en,jp] [-index DIR]` | Download the prebuilt index, or update it; only shards that changed are downloaded and rebuilt |
@@ -502,7 +536,7 @@ Before importing, `index import` and `index pull` check that the manifest's form
 
 The index folder is, in order: the `-index` flag, `$TDM_INDEX_DIR`, or `tenable-docs-mcp/index` in the user cache folder.
 
-`verify-links` exits with 1 when any link is broken, and with 2 on a usage or input error. `index build` exits with 1 when any page fails. `index pull` exits with 1 when the download or the build fails, leaving the index as it was.
+`doctor` exits with 1 when a check fails. `verify-links` exits with 1 when any link is broken, and with 2 on a usage or input error. `index build` exits with 1 when any page fails. `index pull` exits with 1 when the download or the build fails, leaving the index as it was.
 
 ## Privacy and security
 
@@ -531,7 +565,7 @@ Every other host is refused, including redirects to other hosts and redirects fr
 
 ### What it sends to Tenable
 
-Only feedback or a gap report that the user writes, or approves, in a form their MCP client shows them. Nothing is sent without that. The assistant can't write the user's feedback: `open_feedback_form` has no argument for a comment, and the gap form pre-fills the question for the user to edit. Forms expire after 30 minutes and are bound to the page they were opened for. Sending is limited to one item a minute and ten a day, across every session on the computer. For clients that can't show forms, sending is off, and the tools tell the assistant to give the user the page's link instead.
+Only feedback or a gap report that the user writes, or approves, in a form their MCP client shows them, or that they send themselves with `tenable-docs-mcp gaps submit`. Nothing is sent without that. The assistant can't write the user's feedback: `open_feedback_form` has no argument for a comment, and the gap form pre-fills the question for the user to edit. Forms expire after 30 minutes and are bound to the page they were opened for. Sending is limited to one item a minute and ten a day, across every session on the computer. For clients that can't show forms, sending is off, and the tools tell the assistant to give the user the page's link instead.
 
 ### What it stores, on this computer
 
@@ -542,7 +576,7 @@ Only feedback or a gap report that the user writes, or approves, in a form their
 | A log of feedback sent, which also counts the rate limits | `tenable-docs-mcp/feedback.jsonl` in the user settings folder | Folder `0700`, file `0600` |
 | Your synonyms, if you add them | `tenable-docs-mcp/synonyms.txt` in the user settings folder, or `$TDM_SYNONYMS` | Yours; the server only reads it |
 
-On Windows, permission bits don't apply; those folders are already private to the user. A recorded gap holds the question, product, language, the assistant's note on what it searched, the server version, and the time. The note stays on this computer. `tenable-docs-mcp gaps clear -yes` deletes the file.
+On Windows, permission bits don't apply; those folders are already private to the user. A recorded gap holds the question, product, language, the page it's about, the assistant's note on what it searched, the server version, the time, and when it was sent to Tenable, if it was. The note stays on this computer. `tenable-docs-mcp gaps clear -yes` deletes the file.
 
 ### HTTP server hardening
 
