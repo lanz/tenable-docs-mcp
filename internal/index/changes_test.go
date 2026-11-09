@@ -7,7 +7,9 @@ package index
 import (
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 )
 
 // rebuild builds a shard from scratch with pages (path → body), takes the history of
@@ -153,5 +155,29 @@ func TestPutRecordsSectionChanges(t *testing.T) {
 	}
 	if cs, _ := s.Changes(ctx, ChangeQuery{Since: "2000-01-01", Guide: "nessus", Limit: 1}); len(cs) != 1 {
 		t.Errorf("guide filter and limit: %+v", cs)
+	}
+}
+
+// A shard updated in place, as by a crawl, keeps a year of history too.
+func TestInPlaceUpdatesPruneHistory(t *testing.T) {
+	s := openTest(t, Key{Site: "en"})
+	old := time.Now().UTC().AddDate(-2, 0, 0).Format(time.RFC3339)
+	err := s.Update(ctx, func(tx *Tx) error {
+		if err := tx.SetMeta(historyMeta, old); err != nil {
+			return err
+		}
+		_, err := tx.exec(`INSERT INTO changes (url, change, at) VALUES ('https://docs.tenable.com/nessus/Content/Old.htm', 'added', ?)`, old)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	put(t, s, makeDoc(t, "en", "https://docs.tenable.com/nessus/Content/New.htm", `<h1>New</h1><p>Text.</p>`))
+	cs, err := s.Changes(ctx, ChangeQuery{Since: "2000-01-01"})
+	if err != nil || len(cs) != 1 || !strings.HasSuffix(cs[0].URL, "New.htm") {
+		t.Errorf("changes = %+v, %v", cs, err)
+	}
+	if since, _ := s.HistorySince(ctx); since <= old {
+		t.Errorf("history_since = %s", since)
 	}
 }

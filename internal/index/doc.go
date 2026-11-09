@@ -90,6 +90,8 @@ type Tx struct {
 	tx    *sql.Tx
 	shard *Shard
 	stmts map[string]*sql.Stmt
+	// recorded is set when the transaction adds to the change history.
+	recorded bool
 }
 
 func (t *Tx) close() {
@@ -248,6 +250,7 @@ func (t *Tx) sectionsOf(pageID int64) ([]textdiff.Section, error) {
 
 // recordChange adds a change, with its sections, to the change history.
 func (t *Tx) recordChange(c Change) error {
+	t.recorded = true
 	res, err := t.exec(`INSERT INTO changes (url, change, at, old_hash, new_hash, title, product, guide) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		c.URL, c.Change, c.At, c.OldHash, c.NewHash, c.Title, c.Product, c.Guide)
 	if err != nil {

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // installText builds a shard holding one page with text, and installs it.
@@ -161,6 +162,15 @@ func TestBuildFilesAreUnique(t *testing.T) {
 	if err := os.WriteFile(stale, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	old := time.Now().Add(-2 * staleBuild)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+	// And one another process is writing now, which stays.
+	busy := filepath.Join(dir, buildPrefix(en)+"busy.db")
+	if err := os.WriteFile(busy, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	b1, err := ix.Build(en)
 	if err != nil {
 		t.Fatal(err)
@@ -168,6 +178,9 @@ func TestBuildFilesAreUnique(t *testing.T) {
 	defer ix.Discard(b1)
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Errorf("stale build not removed: %v", err)
+	}
+	if _, err := os.Stat(busy); err != nil {
+		t.Errorf("another process's build was removed: %v", err)
 	}
 	if b1.Path == stale || !strings.HasPrefix(filepath.Base(b1.Path), buildPrefix(en)) {
 		t.Errorf("build path = %s", b1.Path)

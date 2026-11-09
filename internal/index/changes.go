@@ -6,7 +6,9 @@ package index
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/lanz/tenable-docs-mcp/internal/textdiff"
@@ -99,6 +101,23 @@ func (s *Shard) TakeHistory(ctx context.Context, old *Shard) error {
 		}
 		return s.recordDifferences(ctx, tx, old, at)
 	})
+}
+
+// pruneHistory deletes changes older than HistoryDays, with their sections, and moves
+// the history's start up to match.
+func (t *Tx) pruneHistory() error {
+	cutoff := time.Now().UTC().AddDate(0, 0, -HistoryDays).Format(time.RFC3339)
+	if _, err := t.exec("DELETE FROM changes WHERE at < ?", cutoff); err != nil {
+		return err
+	}
+	var since string
+	err := t.tx.QueryRowContext(t.ctx, "SELECT value FROM meta WHERE key = ?", historyMeta).Scan(&since)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && (since == "" || since >= cutoff) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return t.SetMeta(historyMeta, cutoff)
 }
 
 // pageState is what comparing two builds needs of a page.
