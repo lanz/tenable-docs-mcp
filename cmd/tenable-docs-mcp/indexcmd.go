@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/lanz/tenable-docs-mcp/internal/build"
 	"github.com/lanz/tenable-docs-mcp/internal/crawl"
 	"github.com/lanz/tenable-docs-mcp/internal/index"
+	"github.com/lanz/tenable-docs-mcp/internal/llmstxt"
 	"github.com/lanz/tenable-docs-mcp/internal/published"
 	"github.com/lanz/tenable-docs-mcp/internal/server"
 	"github.com/lanz/tenable-docs-mcp/internal/site"
@@ -43,6 +45,9 @@ const indexUsage = `Usage:
         verify a snapshot and build the local index from it
   %[1]s index verify SNAPSHOT
         check a snapshot's files against its manifest
+  %[1]s index llms -out DIR [-sites en,jp] [-index DIR]
+        write each site's llms.txt (https://llmstxt.org), listing its guides, from the
+        index into DIR/SITE/llms.txt
 `
 
 // now is the clock, for tests.
@@ -64,6 +69,8 @@ func indexCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 		return indexImport(ctx, args[1:], stdout, stderr)
 	case "verify":
 		return indexVerify(args[1:], stdout, stderr)
+	case "llms":
+		return indexLLMs(ctx, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "%s index: unknown command %q\n\n"+indexUsage, server.Name, args[0], server.Name)
 		return 2
@@ -509,4 +516,100 @@ func indexVerify(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "Snapshot format %d, built %s by %s.\n", m.Format, m.BuiltAt, m.Generator)
 	return code
+}
+
+// indexLLMs writes each site's llms.txt from the index, into -out/<site>/llms.txt.
+func indexLLMs(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet(server.Name+" index llms", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dir := fs.String("index", "", "the index folder (default: $TDM_INDEX_DIR, or the user's cache folder)")
+	sitesFlag := fs.String("sites", "", "only these sites, such as en,jp (default: every site in the index)")
+	out := fs.String("out", "", "write each site's file to this folder, as SITE/llms.txt")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *out == "" || fs.NArg() > 0 {
+		fmt.Fprintf(stderr, indexUsage, server.Name)
+		return 2
+	}
+	d, err := indexDir(*dir)
+	if err != nil {
+		fmt.Fprintln(stderr, "index llms:", err)
+		return 1
+	}
+	ix, err := index.Open(d)
+	if err != nil {
+		fmt.Fprintln(stderr, "index llms:", err)
+		return 1
+	}
+	defer ix.Close()
+	var all []site.Site
+	for _, s := range site.Sites {
+		if ix.Shard(index.Key{Site: s.Code}) != nil {
+			all = append(all, s)
+		}
+	}
+	if len(all) == 0 {
+		fmt.Fprintf(stderr, "index llms: the index in %s is empty\n", d)
+		return 1
+	}
+	sites, err := pickSites(*sitesFlag, all)
+	if err != nil {
+		fmt.Fprintln(stderr, "index llms:", err)
+		return 2
+	}
+	guides := func(k index.Key) ([]index.GuideInfo, error) {
+		if ix.Shard(k) == nil {
+			return nil, nil
+		}
+		var gs []index.GuideInfo
+		err := ix.With(k, func(s *index.Shard) error {
+			var err error
+			gs, err = s.Guides(ctx)
+			return err
+		})
+		return gs, err
+	}
+	for _, s := range sites {
+		current, err := guides(index.Key{Site: s.Code})
+		if err != nil {
+			fmt.Fprintln(stderr, "index llms:", err)
+			return 1
+		}
+		older, err := guides(index.Key{Site: s.Code, Older: true})
+		if err != nil {
+			fmt.Fprintln(stderr, "index llms:", err)
+			return 1
+		}
+		var others []site.Site
+		for _, o := range all {
+			if o.Code != s.Code {
+				others = append(others, o)
+			}
+		}
+		var b strings.Builder
+		if err := llmstxt.Write(&b, s, current, older, others); err != nil {
+			fmt.Fprintln(stderr, "index llms:", err)
+			return 1
+		}
+		file := filepath.Join(*out, s.Code, "llms.txt")
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			fmt.Fprintln(stderr, "index llms:", err)
+			return 1
+		}
+		if err := os.WriteFile(file, []byte(b.String()), 0o644); err != nil {
+			fmt.Fprintln(stderr, "index llms:", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "Wrote %s, for %s: %s, %d in older versions.\n", file, llmstxt.Path(s), plural(len(current), "guide"), len(older))
+	}
+	return 0
+}
+
+// plural counts things: "1 guide", "2 guides".
+func plural(n int, thing string) string {
+	if n == 1 {
+		return "1 " + thing
+	}
+	return fmt.Sprintf("%d %ss", n, thing)
 }
