@@ -31,8 +31,11 @@ func (e *Env) UpdateAvailable() (version.Update, bool) {
 
 // UpdateNote adds a note about a newer release to the first tool result of each
 // session, for the assistant to pass on to the user.
-func (e *Env) UpdateNote() mcp.Middleware {
-	var noted sync.Map // sessions given the note, or found up to date
+func (e *Env) UpdateNote() mcp.Middleware { return e.updateNote(&sync.Map{}) }
+
+// updateNote is UpdateNote, keeping in noted the sessions given the note, or found up
+// to date.
+func (e *Env) updateNote(noted *sync.Map) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 			res, err := next(ctx, method, req)
@@ -43,8 +46,17 @@ func (e *Env) UpdateNote() mcp.Middleware {
 			if !ok || r.IsError {
 				return res, err
 			}
-			if _, seen := noted.LoadOrStore(req.GetSession(), true); seen {
+			session := req.GetSession()
+			if _, seen := noted.LoadOrStore(session, true); seen {
 				return res, err
+			}
+			// Forget the session when it ends, so a long-running HTTP server doesn't
+			// keep every session it has had.
+			if ss, ok := session.(*mcp.ServerSession); ok {
+				go func() {
+					_ = ss.Wait()
+					noted.Delete(ss)
+				}()
 			}
 			if u, ok := e.UpdateAvailable(); ok {
 				r.Content = append(r.Content, &mcp.TextContent{Text: "Note for the user (once): " + u.Message()})

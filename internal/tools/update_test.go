@@ -6,7 +6,9 @@ package tools
 
 import (
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -87,5 +89,43 @@ func TestUpdateNotice(t *testing.T) {
 		if call(t, cs, "index_status", nil, &st); st.Update != nil {
 			t.Errorf("%s: status update = %+v", v, st.Update)
 		}
+	}
+}
+
+// A session is forgotten when it ends, so a long-running server doesn't keep them all.
+func TestUpdateNoteForgetsSessions(t *testing.T) {
+	ix := buildIndex(t)
+	env := NewEnv(Info{Name: "tenable-docs-mcp", Version: "v1.0.0"}, ix)
+	var noted sync.Map
+	s := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "v1.0.0"}, nil)
+	Register(s, env)
+	s.AddReceivingMiddleware(env.updateNote(&noted))
+	for range 5 {
+		st, ct := mcp.NewInMemoryTransports()
+		ss, err := s.Connect(ctx, st, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cs, err := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, nil).Connect(ctx, ct, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "list_products", Arguments: map[string]any{}}); err != nil {
+			t.Fatal(err)
+		}
+		cs.Close()
+		ss.Close()
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		n := 0
+		noted.Range(func(any, any) bool { n++; return true })
+		if n == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d sessions kept after they ended", n)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
