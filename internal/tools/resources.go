@@ -123,10 +123,7 @@ func RegisterGuides(s *mcp.Server, env *Env) {
 	}
 	env.guideURIs = now
 	for _, g := range guides {
-		title := strings.TrimSpace(g.Product + " " + g.GuideType)
-		if title == "" {
-			title = g.Path
-		}
+		title := g.Title()
 		s.AddResource(&mcp.Resource{
 			URI: TocURI(g.Path, ""), Name: "toc/" + g.Path, Title: title + ": table of contents", MIMEType: "text/markdown",
 			Description: fmt.Sprintf("The table of contents of %s (%s), %d pages.", title, g.Path, g.Pages),

@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 
 	"github.com/lanz/tenable-docs-mcp/internal/page"
@@ -153,14 +154,43 @@ type GuideInfo struct {
 	GuideType string
 	Version   string
 	Pages     int
+	// Name is the name the build gave the guide, or empty; Title falls back when it's
+	// empty.
+	Name string
+	// Landing is the guide's first page in its table of contents, with its title and
+	// description, when the index has it.
+	Landing            string
+	LandingTitle       string
+	LandingDescription string
 }
 
 // Guides lists the shard's guides, with each one's most common product and guide type.
 func (s *Shard) Guides(ctx context.Context) ([]GuideInfo, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT guide, version, count(*),
-		(SELECT p2.product FROM pages p2 WHERE p2.guide = p.guide GROUP BY p2.product ORDER BY count(*) DESC LIMIT 1),
-		(SELECT p3.guide_type FROM pages p3 WHERE p3.guide = p.guide GROUP BY p3.guide_type ORDER BY count(*) DESC LIMIT 1)
-		FROM pages p WHERE guide <> '' GROUP BY guide, version ORDER BY guide`)
+	return s.guides(ctx, "")
+}
+
+// Guide returns one of the shard's guides.
+func (s *Shard) Guide(ctx context.Context, guidePath string) (GuideInfo, bool, error) {
+	gs, err := s.guides(ctx, guidePath)
+	if err != nil || len(gs) == 0 {
+		return GuideInfo{}, false, err
+	}
+	return gs[0], true, nil
+}
+
+// guides lists the shard's guides, or only guidePath when it's set.
+func (s *Shard) guides(ctx context.Context, guidePath string) ([]GuideInfo, error) {
+	rows, err := s.db.QueryContext(ctx, `WITH g AS (
+			SELECT guide, version, count(*) AS n,
+				(SELECT p2.product FROM pages p2 WHERE p2.guide = p.guide GROUP BY p2.product ORDER BY count(*) DESC LIMIT 1) AS product,
+				(SELECT p3.guide_type FROM pages p3 WHERE p3.guide = p.guide GROUP BY p3.guide_type ORDER BY count(*) DESC LIMIT 1) AS guide_type
+			FROM pages p WHERE guide <> '' AND (?1 = '' OR guide = ?1) GROUP BY guide, version
+		)
+		SELECT g.guide, g.version, g.n, g.product, g.guide_type, coalesce(t.name, ''),
+			coalesce(t.entries ->> '$[0].URL', ''), coalesce(l.title, ''), coalesce(l.description, '')
+		FROM g LEFT JOIN tocs t ON t.guide = g.guide
+		LEFT JOIN pages l ON l.url = t.entries ->> '$[0].URL'
+		ORDER BY g.guide`, guidePath)
 	if err != nil {
 		return nil, err
 	}
@@ -168,12 +198,39 @@ func (s *Shard) Guides(ctx context.Context) ([]GuideInfo, error) {
 	var out []GuideInfo
 	for rows.Next() {
 		var g GuideInfo
-		if err := rows.Scan(&g.Path, &g.Version, &g.Pages, &g.Product, &g.GuideType); err != nil {
+		if err := rows.Scan(&g.Path, &g.Version, &g.Pages, &g.Product, &g.GuideType, &g.Name,
+			&g.Landing, &g.LandingTitle, &g.LandingDescription); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
 	}
 	return out, rows.Err()
+}
+
+// welcome is the start of many landing pages' titles, which isn't part of the guide's
+// name.
+var welcome = regexp.MustCompile(`(?i)^(welcome to (the )?|getting started with )`)
+
+// genericTitles are landing-page titles that don't name the guide.
+var genericTitles = map[string]bool{
+	"welcome": true, "overview": true, "introduction": true, "summary": true, "getting started": true,
+	"executive overview": true, "about": true, "home": true,
+}
+
+// Title is the guide's name: its Name, or else its landing page's title without
+// "Welcome to", or else its product and guide type, or else its path.
+func (g GuideInfo) Title() string {
+	if g.Name != "" {
+		return g.Name
+	}
+	t := strings.Join(strings.Fields(welcome.ReplaceAllString(g.LandingTitle, "")), " ")
+	if t != "" && !genericTitles[strings.ToLower(t)] {
+		return t
+	}
+	if t := strings.TrimSpace(g.Product + " " + g.GuideType); t != "" {
+		return t
+	}
+	return g.Path
 }
 
 // GuidePages returns the URLs of a guide's pages, in order.

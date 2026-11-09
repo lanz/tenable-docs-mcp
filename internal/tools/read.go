@@ -227,7 +227,7 @@ func (e *Env) guideOutline(ctx context.Context, guide, language string) (outline
 	if err != nil {
 		return outlineOut{}, err
 	}
-	out := outlineOut{Title: g.path, URL: g.root, Items: []outlineItem{}}
+	out := outlineOut{Title: g.name, URL: g.root, Items: []outlineItem{}}
 	var walk func([]*site.TocEntry, int)
 	walk = func(entries []*site.TocEntry, depth int) {
 		for _, t := range entries {

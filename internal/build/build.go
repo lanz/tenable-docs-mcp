@@ -49,6 +49,10 @@ type Options struct {
 	// for conditional requests. A local copy's file times aren't the site's, so builds
 	// from one don't keep them, and a snapshot changes only when its pages do.
 	Live bool
+	// GuideNames names guides, by site code and then guide path ("nessus",
+	// "nessus/10_8"). Guides it doesn't name are listed in the report's Unnamed, when it's
+	// set; without it, no guide has a name.
+	GuideNames map[string]map[string]string
 	// Progress, when set, is called after each page, with the site and how many of its
 	// sitemap's entries are done.
 	Progress func(siteCode string, done, total int)
@@ -64,6 +68,8 @@ type Report struct {
 	Blocked int      `json:"blocked"`
 	Skipped int      `json:"skipped"`
 	Failed  []string `json:"failed,omitempty"`
+	// Unnamed lists the guides, as site:path, that Options.GuideNames doesn't name.
+	Unnamed []string `json:"unnamed,omitempty"`
 }
 
 // Total is how many pages the build gave the sink.
@@ -107,7 +113,7 @@ func buildSite(ctx context.Context, opts Options, s site.Site, agent string, sin
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := buildPage(ctx, opts.Source, opts.Live, s, e, rules, tocs, sink, rep); err != nil {
+		if err := buildPage(ctx, opts, s, e, rules, tocs, sink, rep); err != nil {
 			return err
 		}
 		if opts.Progress != nil {
@@ -130,8 +136,9 @@ func isPagePath(p string) bool {
 	return false
 }
 
-func buildPage(ctx context.Context, src site.Source, live bool, s site.Site, e site.Entry, rules *site.Robots,
+func buildPage(ctx context.Context, opts Options, s site.Site, e site.Entry, rules *site.Robots,
 	tocs map[string][]*site.TocEntry, sink Sink, rep *Report) error {
+	src := opts.Source
 	u, err := url.Parse(e.URL)
 	if err != nil || site.OnSite(e.URL, s) == "" || !isPagePath(u.Path) {
 		rep.Skipped++
@@ -171,6 +178,12 @@ func buildPage(ctx context.Context, src site.Source, live bool, s site.Site, e s
 		}
 		tocs[g.RootURL] = toc
 		if toc != nil {
+			if opts.GuideNames != nil {
+				g.Name = strings.TrimSpace(opts.GuideNames[s.Code][g.Path])
+				if g.Name == "" {
+					rep.Unnamed = append(rep.Unnamed, s.Code+":"+g.Path)
+				}
+			}
 			if err := sink.Toc(ctx, k, g, toc); err != nil {
 				return err
 			}
@@ -178,7 +191,7 @@ func buildPage(ctx context.Context, src site.Source, live bool, s site.Site, e s
 		}
 	}
 	bp := Page{Page: p, Entry: e, Trail: site.TocTrail(toc, e.URL)}
-	if live {
+	if opts.Live {
 		bp.LastModified = resp.LastModified
 	}
 	if err := sink.Page(ctx, k, bp); err != nil {

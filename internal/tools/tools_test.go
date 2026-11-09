@@ -83,6 +83,7 @@ func fillIndex(t *testing.T, ix *index.Index, pages []fixturePage) {
 		err = b.Update(ctx, func(tx *index.Tx) error {
 			if k == (index.Key{Site: "en"}) {
 				g, _ := site.GuideOf(en + "nessus/Content/x.htm")
+				g.Name = "Tenable Nessus User Guide"
 				if err := tx.PutToc(g, nessusToc); err != nil {
 					return err
 				}
@@ -345,7 +346,8 @@ func TestOutlineAndBrowse(t *testing.T) {
 
 	var b browseOut
 	text = call(t, cs, "browse_guide", map[string]any{"guide": "nessus", "depth": 1}, &b)
-	if len(b.Entries) != 1 || b.Entries[0].More != 3 || b.Total != 4 || !strings.Contains(text, "(+3 more)") {
+	if len(b.Entries) != 1 || b.Entries[0].More != 3 || b.Total != 4 || !strings.Contains(text, "(+3 more)") ||
+		b.Name != "Tenable Nessus User Guide" || !strings.HasPrefix(text, "Tenable Nessus User Guide: nessus") {
 		t.Errorf("depth 1 = %+v", b)
 	}
 	call(t, cs, "browse_guide", map[string]any{"guide": en + "nessus/Content/Ports.htm"}, &b)
@@ -392,7 +394,7 @@ func TestRelatedAndProducts(t *testing.T) {
 			nessus = &p.Products[0].Guides[i]
 		}
 	}
-	if nessus == nil || nessus.Pages != 4 || strings.Join(nessus.Versions, ",") != "10.5" {
+	if nessus == nil || nessus.Pages != 4 || strings.Join(nessus.Versions, ",") != "10.5" || nessus.Name != "Tenable Nessus User Guide" {
 		t.Errorf("nessus guide = %+v", nessus)
 	}
 	if len(p.Languages) != 2 || p.Languages[0].Language != "en" || p.Languages[0].OlderPages != 1 || p.Languages[0].LastIndexed == "" {

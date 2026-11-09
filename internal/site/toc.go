@@ -26,6 +26,9 @@ type Guide struct {
 	// Version is the product version the guide is for ("10.8"), or empty for the
 	// current version.
 	Version string
+	// Name is the guide's name ("Tenable Nessus User Guide"), when a build was given
+	// one. GuideOf leaves it empty: a URL doesn't say.
+	Name string
 }
 
 // TocURL returns the URL of the guide's table of contents.
