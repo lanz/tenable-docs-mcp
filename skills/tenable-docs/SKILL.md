@@ -27,7 +27,9 @@ The Tenable Docs MCP server searches Tenable's product documentation: docs.tenab
    | What a setting does, its default, or its valid values | `find_setting` |
    | Which role or permission a task needs | `required_role` |
    | Ports, hardware, operating systems, browsers, or dependencies | `requirements` |
-   | What changed in a release, or since a version | `release_notes` |
+   | What changed in a release | `release_notes` |
+   | How a page or setting differs between two versions | `compare_versions` |
+   | What changed in the docs recently | `whats_changed` |
    | What a term, abbreviation, or product name means | `define_term` |
    | What a guide covers | `browse_guide`, `list_products` |
    | Pages around one you've read | `related_pages` |

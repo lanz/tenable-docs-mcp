@@ -79,7 +79,7 @@ func registerRead(s *mcp.Server, env *Env) {
 			"needs, and when it changed. Pass a link from search_docs: with an #anchor it reads that section, without " +
 			"one the whole page. Long content comes in parts; previous and next point to the neighboring sections. " +
 			"Cite the url it returns.",
-		Annotations: readOnly("Read a doc"),
+		Annotations: readsLive("Read a doc"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in readIn) (*mcp.CallToolResult, readOut, error) {
 		u, err := normalizeURL(in.URL)
 		if err != nil {
@@ -105,7 +105,7 @@ func registerRead(s *mcp.Server, env *Env) {
 		Name: "outline",
 		Description: "List a page's headings, with links to each and their word counts, or a guide's pages from its " +
 			"table of contents. Use it to find the right section of a long page, or to see what a guide covers.",
-		Annotations: readOnly("Outline"),
+		Annotations: readsLive("Outline"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in outlineIn) (*mcp.CallToolResult, outlineOut, error) {
 		if in.URL == "" && in.Guide == "" {
 			return nil, outlineOut{}, fmt.Errorf("give url (a page) or guide (a guide's path)")

@@ -635,3 +635,35 @@ func TestCrawlDue(t *testing.T) {
 		}
 	}
 }
+
+// An update from the snapshot records what it changed in the shard's history.
+func TestUpdateRecordsHistory(t *testing.T) {
+	dirA, _ := makeSnapshot(t, "")
+	dirB, _ := makeSnapshot(t, "新しい段落")
+	s := newServer(t, dirA)
+	ix := openIndex(t)
+	if _, err := updater(s, ix).Update(ctx); err != nil {
+		t.Fatal(err)
+	}
+	jp := index.Key{Site: "jp"}
+	history := func() []index.Change {
+		var cs []index.Change
+		_ = ix.With(jp, func(sh *index.Shard) error {
+			cs, _ = sh.Changes(ctx, index.ChangeQuery{Since: "2000-01-01", Sections: true})
+			return nil
+		})
+		return cs
+	}
+	// The first download starts the history; its pages aren't changes.
+	if cs := history(); len(cs) != 0 {
+		t.Fatalf("first download recorded %d changes", len(cs))
+	}
+	s.serve(dirB)
+	if _, err := updater(s, ix).Update(ctx); err != nil {
+		t.Fatal(err)
+	}
+	cs := history()
+	if len(cs) != 1 || cs[0].Change != "updated" || len(cs[0].Sections) != 1 || !slices.Contains(cs[0].Sections[0].Added, "新しい段落") {
+		t.Errorf("history = %+v", cs)
+	}
+}

@@ -233,7 +233,7 @@ func registerBrowse(s *mcp.Server, env *Env) {
 		Description: "Show what's around a docs page: its place in the table of contents (parent, previous, next), the " +
 			"pages it links to and that link to it, same-titled pages in other products, and the page in other " +
 			"languages and versions.",
-		Annotations: readOnly("Related pages"),
+		Annotations: readsLive("Related pages"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in relatedIn) (*mcp.CallToolResult, relatedOut, error) {
 		u, err := normalizeURL(in.URL)
 		if err != nil {

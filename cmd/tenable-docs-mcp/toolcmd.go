@@ -48,6 +48,8 @@ var toolCommands = []toolCommand{
 	{"requirements", "requirements", "query", "QUESTION", "requirements", "show system requirements, as requirements does"},
 	{"release-notes", "release_notes", "query", "WORDS", "entries", "show release-note entries, as release_notes does"},
 	{"term", "define_term", "term", "TERM", "definitions", "define a term or product name, as define_term does"},
+	{"compare", "compare_versions", "url", "URL", "", "compare a page (or, with -setting, a setting) between two versions, as compare_versions does"},
+	{"changes", "whats_changed", "since", "SINCE", "changes", "list the pages changed since a date (2026-10-01, 2026-10, or 30d), as whats_changed does"},
 	{"status", "index_status", "", "", "", "show the server's version and what the index holds, as index_status does"},
 }
 
@@ -289,6 +291,10 @@ func toolExitCode(c toolCommand, res *mcp.CallToolResult) int {
 	var list []json.RawMessage
 	_ = json.Unmarshal(out[c.Results], &list)
 	if len(list) > 0 {
+		return 0
+	}
+	// whats_changed also lists pages by their sitemap dates.
+	if c.Tool == "whats_changed" && len(out["dated"]) > 0 && string(out["dated"]) != "null" {
 		return 0
 	}
 	// define_term also answers with what a product name means.

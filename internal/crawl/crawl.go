@@ -457,7 +457,13 @@ func (w *writer) ensureShard(ctx context.Context, k index.Key) error {
 	if err != nil {
 		return err
 	}
-	if err := b.Update(ctx, func(tx *index.Tx) error { return tx.SetMeta("source", "live") }); err != nil {
+	err = b.Update(ctx, func(tx *index.Tx) error {
+		if err := tx.SetMeta("source", "live"); err != nil {
+			return err
+		}
+		return tx.StartHistory()
+	})
+	if err != nil {
 		w.c.Index.Discard(b)
 		return err
 	}

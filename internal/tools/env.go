@@ -69,6 +69,8 @@ func Register(s *mcp.Server, env *Env) {
 	registerRead(s, env)
 	registerBrowse(s, env)
 	registerSpecific(s, env)
+	registerCompare(s, env)
+	registerChanges(s, env)
 	registerHonest(s, env)
 	registerFeedback(s, env)
 	registerResources(s, env)
@@ -79,6 +81,14 @@ var closedWorld = false
 
 func readOnly(title string) *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{Title: title, ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &closedWorld}
+}
+
+var openWorld = true
+
+// readsLive annotates a reading tool that, for a page the index doesn't have, can fetch
+// it from its live site (see Env.FetchPage).
+func readsLive(title string) *mcp.ToolAnnotations {
+	return &mcp.ToolAnnotations{Title: title, ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &openWorld}
 }
 
 var errNoIndex = errors.New("the documentation index isn't built yet, so there's nothing to search; index_status shows its state")

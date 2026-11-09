@@ -105,7 +105,8 @@ func (s *IndexSink) Keys() []index.Key {
 	return keys
 }
 
-// Finish writes what's left, optimizes each shard, and installs them in the index.
+// Finish writes what's left, optimizes each shard, gives it the change history of the
+// shard it replaces, and installs them in the index.
 func (s *IndexSink) Finish(ctx context.Context) error {
 	for _, k := range s.Keys() {
 		if err := s.flush(ctx, k); err != nil {
@@ -127,6 +128,15 @@ func (s *IndexSink) Finish(ctx context.Context) error {
 			return err
 		}
 		if err := b.Optimize(ctx); err != nil {
+			return err
+		}
+		// The change history: the replaced shard's, and what this build changed.
+		if s.ix.Shard(k) == nil {
+			err = b.TakeHistory(ctx, nil)
+		} else {
+			err = s.ix.With(k, func(old *index.Shard) error { return b.TakeHistory(ctx, old) })
+		}
+		if err != nil {
 			return err
 		}
 		if err := s.ix.Install(b); err != nil {
