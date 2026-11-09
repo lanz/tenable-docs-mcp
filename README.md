@@ -592,7 +592,7 @@ Every other host is refused, including redirects to other hosts and redirects fr
 
 ### What it sends to Tenable
 
-Only feedback or a gap report that the user writes, or approves, in a form their MCP client shows them, or that they send themselves with `tenable-docs-mcp gaps submit`. Nothing is sent without that. The assistant can't write the user's feedback: `open_feedback_form` has no argument for a comment, and the gap form pre-fills the question for the user to edit. Forms expire after 30 minutes and are bound to the page they were opened for. Sending is limited to one item a minute and ten a day, across every session on the computer. For clients that can't show forms, sending is off, and the tools tell the assistant to give the user the page's link instead.
+Only feedback or a gap report that the user writes, or approves, in a form their MCP client shows them, or that they send themselves with `tenable-docs-mcp gaps submit`. Nothing is sent without that. The assistant can't write the user's feedback: `open_feedback_form` has no argument for a comment, and the gap form pre-fills the question for the user to edit. Forms expire after 30 minutes, are bound to the page (and, for a gap, the question) they were opened for, and each form's answer is sent once. Sending is limited to one item a minute and ten a day, across every session on the computer. For clients that can't show forms, sending is off, and the tools tell the assistant to give the user the page's link instead.
 
 ### What it stores, on this computer
 

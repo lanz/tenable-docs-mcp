@@ -24,11 +24,35 @@ const gapFormID = "gap"
 // docsHome is the page a gap is about when nothing came closer.
 const docsHome = "https://docs.tenable.com/"
 
-// gapState binds a gap form to its page, as formState does for feedback forms.
-func gapState(page string, at time.Time) string { return formState("gap\x00"+page, false, at) }
+// gapState binds a gap form to its page and question, as formState does for feedback
+// forms: the question is what's sent if the user leaves the form's question empty.
+func gapState(page, question string, at time.Time) string {
+	return formState(gapBinding(page, question), false, at)
+}
 
-func checkGapState(state, page string, now time.Time) error {
-	return checkFormState(state, "gap\x00"+page, false, now)
+func checkGapState(state, page, question string, now time.Time) error {
+	return checkFormState(state, gapBinding(page, question), false, now)
+}
+
+func gapBinding(page, question string) string {
+	return "gap\x00" + page + "\x00" + strings.TrimSpace(question)
+}
+
+// gapLimits are the most characters the gap form's question and details fields take.
+// Both go in one comment after the version prefix ("Docs gap: question", a blank line,
+// and the details), so together they always fit.
+func gapLimits(version string) (question, details int) {
+	room := feedback.MaxComment - utf8.RuneCountInString(feedback.Prefix(version)+"Docs gap: \n\n")
+	question = min(room/2, gaps.MaxQuestion)
+	return question, room - question
+}
+
+// clipRunes shortens s to at most n characters.
+func clipRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return strings.TrimSpace(string(r[:n]))
+	}
+	return s
 }
 
 // GapPage is the page a gap report is about, for a gap recorded without one: the
@@ -98,7 +122,7 @@ func (e *Env) productHome(ctx context.Context, product string) string {
 // some clients won't accept a form until required fields are filled in by hand, and a
 // question left empty falls back to the one recorded.
 func gapForm(page, question, version string) *mcp.ElicitParams {
-	limit := feedback.MaxComment - utf8.RuneCountInString(feedback.Prefix(version)+"Docs gap: ")
+	qLimit, dLimit := gapLimits(version)
 	return &mcp.ElicitParams{
 		Message: "Send this question to Tenable's documentation team?\n\nIt's recorded on this computer either way. " +
 			"Edit the question as you like, and add what you were trying to do and your email only if you want to. " +
@@ -108,11 +132,11 @@ func gapForm(page, question, version string) *mcp.ElicitParams {
 			"type": "object",
 			"properties": map[string]any{
 				"question": map[string]any{
-					"type": "string", "title": "Question", "default": question, "maxLength": limit,
+					"type": "string", "title": "Question", "default": clipRunes(question, qLimit), "maxLength": qLimit,
 					"description": "The question the docs didn't answer; edit it as you like",
 				},
 				"details": map[string]any{
-					"type": "string", "title": "What were you trying to do? (optional)", "maxLength": limit,
+					"type": "string", "title": "What were you trying to do? (optional)", "maxLength": dLimit,
 					"description": "Anything that would help the docs team answer it",
 				},
 				"email": map[string]any{"type": "string", "title": "Email (optional)", "description": "Only if you want the docs team to reply"},
@@ -123,7 +147,7 @@ func gapForm(page, question, version string) *mcp.ElicitParams {
 
 // sendGap sends what the user entered in the gap form.
 func (e *Env) sendGap(ctx context.Context, req *mcp.CallToolRequest, page, recorded string, now time.Time) (*mcp.CallToolResult, gapOut, error) {
-	if err := checkGapState(req.Params.RequestState, page, now); err != nil {
+	if err := checkGapState(req.Params.RequestState, page, recorded, now); err != nil {
 		return nil, gapOut{}, err
 	}
 	out := gapOut{Recorded: true, File: e.GapsFile}
@@ -139,10 +163,11 @@ func (e *Env) sendGap(ctx context.Context, req *mcp.CallToolRequest, page, recor
 		out.SentToTenable = "declined"
 		return summary("Recorded on this computer only: the user chose not to send it to Tenable."), out, nil
 	}
+	qLimit, _ := gapLimits(e.Info.Version)
 	question, _ := res.Content["question"].(string)
 	if strings.TrimSpace(question) == "" {
 		// A client that doesn't fill in defaults may send nothing for the question the user left as it was.
-		question = recorded
+		question = clipRunes(strings.TrimSpace(recorded), qLimit)
 	}
 	details, _ := res.Content["details"].(string)
 	email, _ := res.Content["email"].(string)
@@ -151,7 +176,12 @@ func (e *Env) sendGap(ctx context.Context, req *mcp.CallToolRequest, page, recor
 	if err != nil {
 		return nil, gapOut{}, fmt.Errorf("recorded on this computer, but not sent: %w", err)
 	}
+	release, err := claimForm(req.Params.RequestState, now)
+	if err != nil {
+		return nil, gapOut{}, fmt.Errorf("recorded on this computer: %w", err)
+	}
 	if err := e.Feedback.Send(ctx, p); err != nil {
+		release()
 		return nil, gapOut{}, fmt.Errorf("recorded on this computer, but not sent: %w", err)
 	}
 	// So gaps submit doesn't offer to send it again.

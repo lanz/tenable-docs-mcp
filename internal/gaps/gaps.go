@@ -9,9 +9,11 @@ package gaps
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -38,11 +40,20 @@ type Record struct {
 	SentAt time.Time `json:"sent_at,omitzero"`
 }
 
-// Limits on what's recorded.
+// Limits on what's recorded. A question is limited as the feedback service limits it,
+// so any recorded question can be sent.
 const (
-	MaxQuestion = 2000
+	MaxQuestion = 1000
 	MaxNote     = 1000
+	maxProduct  = 200
+	maxLanguage = 20
+	maxVersion  = 100
+	maxURL      = 2048
 )
+
+// maxLine is the longest line Read takes; Add's limits keep a record well under it, and
+// a longer line, from an older version or an edit, is skipped.
+const maxLine = 1 << 20
 
 // DefaultPath returns where gaps are recorded: tenable-docs-mcp/gaps.jsonl in the user's
 // settings folder.
@@ -61,6 +72,12 @@ var mu sync.Mutex // serializes writes from this process
 func Add(path string, r Record) (int, error) {
 	r.Question = clip(strings.TrimSpace(r.Question), MaxQuestion)
 	r.Note = clip(strings.TrimSpace(r.Note), MaxNote)
+	r.Product = clip(strings.TrimSpace(r.Product), maxProduct)
+	r.Language = clip(strings.TrimSpace(r.Language), maxLanguage)
+	r.Version = clip(r.Version, maxVersion)
+	if len(r.URL) > maxURL {
+		r.URL = ""
+	}
 	if r.Question == "" {
 		return 0, errors.New("the question is empty")
 	}
@@ -109,15 +126,43 @@ func Read(path string) ([]Record, error) {
 	}
 	defer f.Close()
 	var out []Record
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 64<<10), 1<<20)
-	for sc.Scan() {
+	br := bufio.NewReaderSize(f, 64<<10)
+	for {
+		line, err := readLine(br)
 		var r Record
-		if json.Unmarshal(sc.Bytes(), &r) == nil && r.Question != "" {
+		if len(line) > 0 && json.Unmarshal(line, &r) == nil && r.Question != "" {
 			out = append(out, r)
 		}
+		if err == io.EOF {
+			return out, nil
+		} else if err != nil {
+			return out, err
+		}
 	}
-	return out, sc.Err()
+}
+
+// readLine reads one line, without its newline. A line longer than maxLine comes back
+// empty, so it's skipped like any line that doesn't parse.
+func readLine(br *bufio.Reader) ([]byte, error) {
+	var line []byte
+	tooLong := false
+	for {
+		chunk, err := br.ReadSlice('\n')
+		if !tooLong {
+			if len(line)+len(chunk) > maxLine+1 {
+				tooLong, line = true, nil
+			} else {
+				line = append(line, chunk...)
+			}
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		if tooLong {
+			line = nil
+		}
+		return bytes.TrimRight(line, "\r\n"), err
+	}
 }
 
 // MarkSent records that the record recorded at t with question was sent at sent. Lines
