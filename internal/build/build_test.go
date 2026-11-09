@@ -167,3 +167,54 @@ func (discardSink) Page(context.Context, index.Key, Page) error { return nil }
 func (discardSink) Toc(context.Context, index.Key, site.Guide, []*site.TocEntry) error {
 	return nil
 }
+
+func TestGuideNames(t *testing.T) {
+	src, sites := Source(t)
+	guide := func(names map[string]map[string]string) (Report, index.GuideInfo) {
+		t.Helper()
+		ix, err := index.Open(filepath.Join(t.TempDir(), "index"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer ix.Close()
+		sink := NewIndexSink(ix, "2026-11-07T00:00:00Z")
+		rep, err := Run(ctx, Options{Source: src, Sites: sites, GuideNames: names}, sink)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := sink.Finish(ctx); err != nil {
+			t.Fatal(err)
+		}
+		var g index.GuideInfo
+		err = ix.With(index.Key{Site: "en"}, func(s *index.Shard) error {
+			var ok bool
+			g, ok, err = s.Guide(ctx, "widget")
+			if !ok && err == nil {
+				err = fmt.Errorf("no widget guide")
+			}
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rep, g
+	}
+
+	rep, g := guide(map[string]map[string]string{"en": {"widget": " Widget Manager User Guide "}, "jp": {"widget": "unused"}})
+	if g.Name != "Widget Manager User Guide" || g.Title() != g.Name || len(rep.Unnamed) != 0 {
+		t.Errorf("named: %+v, unnamed %q", g, rep.Unnamed)
+	}
+	if g.Landing != en+"widget/Content/Start.htm" || g.LandingTitle == "" {
+		t.Errorf("landing = %q %q", g.Landing, g.LandingTitle)
+	}
+
+	// A guide the names leave out is reported, and falls back to its landing page's title.
+	rep, g = guide(map[string]map[string]string{"en": {}})
+	if g.Name != "" || fmt.Sprint(rep.Unnamed) != "[en:widget]" || g.Title() != "Widget Manager" {
+		t.Errorf("unnamed: %+v %q, title %q", g, rep.Unnamed, g.Title())
+	}
+	// Without names, nothing is reported.
+	if rep, _ = guide(nil); rep.Unnamed != nil {
+		t.Errorf("no names: unnamed %q", rep.Unnamed)
+	}
+}

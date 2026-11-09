@@ -16,7 +16,14 @@ type migration func(tx *sql.Tx, tokenizer string) error
 
 // migrations lists every schema version. Append to it; never change an entry that has
 // shipped.
-var migrations = []migration{schemaV1, schemaV2, schemaV3}
+var migrations = []migration{schemaV1, schemaV2, schemaV3, schemaV4}
+
+// schemaV4 names guides: the name the build was given ("Tenable Nessus User Guide"),
+// or empty.
+func schemaV4(tx *sql.Tx, _ string) error {
+	_, err := tx.Exec(`ALTER TABLE tocs ADD COLUMN name TEXT NOT NULL DEFAULT ''`)
+	return err
+}
 
 // schemaV3 records what each change was, for listing changes: the page's title,
 // product, and guide (a removed page has no row to read them from), and the sections

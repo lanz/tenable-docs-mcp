@@ -34,9 +34,11 @@ const indexUsage = `Usage:
         build or update the index from the live sites instead: a site the index has
         nothing for is read in full (all eight take about an hour); after that, only
         what changed is fetched
-  %[1]s index build -source "en=DIR;jp=DIR" [-sites en,jp] [-out DIR | -index DIR] [-json]
+  %[1]s index build -source "en=DIR;jp=DIR" [-sites en,jp] [-guide-names FILE] [-out DIR | -index DIR] [-json]
         read the docs from local copies of the sites (one folder per site, as the
-        sites publish them) and write a snapshot to -out, or an index to -index
+        sites publish them) and write a snapshot to -out, or an index to -index;
+        -guide-names names the guides, from a JSON file of site codes to guide paths
+        to names ({"en": {"nessus": "Tenable Nessus User Guide"}})
   %[1]s index import [-sites en,jp] [-index DIR] SNAPSHOT
         verify a snapshot and build the local index from it
   %[1]s index verify SNAPSHOT
@@ -122,6 +124,7 @@ func indexBuild(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	out := fs.String("out", "", "write a snapshot to this folder")
 	dir := fs.String("index", "", "write the index in this folder instead (default: $TDM_INDEX_DIR, or the user's cache folder)")
 	asJSON := fs.Bool("json", false, "print the report as JSON")
+	namesFile := fs.String("guide-names", "", `name the guides from this JSON file: {"en": {"nessus": "Tenable Nessus User Guide"}}`)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -144,8 +147,15 @@ func indexBuild(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		fmt.Fprintln(stderr, "index build:", err)
 		return 2
 	}
+	var names map[string]map[string]string
+	if *namesFile != "" {
+		if names, err = readGuideNames(*namesFile); err != nil {
+			fmt.Fprintln(stderr, "index build:", err)
+			return 2
+		}
+	}
 	builtAt := now().UTC()
-	opts := build.Options{Source: src, Sites: sites, Agent: server.Name, Progress: progressPrinter(stderr)}
+	opts := build.Options{Source: src, Sites: sites, Agent: server.Name, GuideNames: names, Progress: progressPrinter(stderr)}
 
 	var rep build.Report
 	var where string
@@ -200,11 +210,36 @@ func indexBuild(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		for _, f := range rep.Failed {
 			fmt.Fprintln(stdout, "Failed:", f)
 		}
+		if len(rep.Unnamed) > 0 {
+			what := "guides have"
+			if len(rep.Unnamed) == 1 {
+				what = "guide has"
+			}
+			fmt.Fprintf(stdout, "%d %s no name: %s\n", len(rep.Unnamed), what, strings.Join(rep.Unnamed, ", "))
+		}
 	}
 	if len(rep.Failed) > 0 {
 		return 1
 	}
 	return 0
+}
+
+// readGuideNames reads a file of guide names: site codes to guide paths to names.
+func readGuideNames(file string) (map[string]map[string]string, error) {
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	var names map[string]map[string]string
+	if err := json.Unmarshal(b, &names); err != nil {
+		return nil, fmt.Errorf("%s: %w", file, err)
+	}
+	for code := range names {
+		if _, ok := site.ByCode(code); !ok {
+			return nil, fmt.Errorf("%s: no site %q", file, code)
+		}
+	}
+	return names, nil
 }
 
 func shardCounts(pages map[string]int) string {

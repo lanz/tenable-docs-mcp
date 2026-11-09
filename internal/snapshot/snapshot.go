@@ -80,6 +80,7 @@ type record struct {
 type tocRecord struct {
 	// Guide is the guide's root URL.
 	Guide   string           `json:"guide"`
+	Name    string           `json:"name,omitempty"`
 	Entries []*site.TocEntry `json:"entries"`
 }
 
@@ -163,7 +164,7 @@ func (w *Writer) Toc(_ context.Context, k index.Key, g site.Guide, toc []*site.T
 		return err
 	}
 	sw.tocs++
-	return sw.enc.Encode(record{Toc: &tocRecord{Guide: g.RootURL, Entries: toc}})
+	return sw.enc.Encode(record{Toc: &tocRecord{Guide: g.RootURL, Name: g.Name, Entries: toc}})
 }
 
 // Close finishes each shard's file and writes the manifest, last, so a reader never
@@ -303,6 +304,7 @@ func Read(ctx context.Context, dir string, s Shard, sink build.Sink) error {
 			if !ok || g.RootURL != r.Toc.Guide {
 				return fmt.Errorf("%s: a table of contents for %q, which isn't a guide", s.File, r.Toc.Guide)
 			}
+			g.Name = r.Toc.Name
 			if err := sink.Toc(ctx, k, g, r.Toc.Entries); err != nil {
 				return err
 			}

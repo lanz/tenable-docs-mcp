@@ -22,6 +22,8 @@ type guideRef struct {
 	key  index.Key
 	path string
 	root string
+	// name is the guide's name, or its path.
+	name string
 	toc  []*site.TocEntry
 }
 
@@ -66,6 +68,10 @@ func findGuide(ctx context.Context, env *Env, guide, language string) (*guideRef
 		}
 		if ok {
 			ref.toc, ref.root = toc, root
+			ref.name = path
+			if gi, ok, err := s.Guide(ctx, path); err == nil && ok {
+				ref.name = gi.Title()
+			}
 			return nil
 		}
 		guides, err = s.Guides(ctx)
@@ -108,6 +114,7 @@ type tocNode struct {
 }
 
 type browseOut struct {
+	Name     string    `json:"name"`
 	Guide    string    `json:"guide"`
 	Language string    `json:"language"`
 	RootURL  string    `json:"root_url"`
@@ -141,6 +148,7 @@ type relatedOut struct {
 type productsIn struct{}
 
 type guideOut struct {
+	Name      string   `json:"name"`
 	Path      string   `json:"path"`
 	GuideType string   `json:"guide_type,omitempty"`
 	Pages     int      `json:"pages"`
@@ -185,7 +193,7 @@ func registerBrowse(s *mcp.Server, env *Env) {
 		case depth > 10:
 			depth = 10
 		}
-		out := browseOut{Guide: g.path, Language: g.key.Site, RootURL: g.root, Entries: []tocNode{}}
+		out := browseOut{Name: g.name, Guide: g.path, Language: g.key.Site, RootURL: g.root, Entries: []tocNode{}}
 		var convert func([]*site.TocEntry, int)
 		count := func(es []*site.TocEntry) int {
 			n := 0
@@ -214,7 +222,7 @@ func registerBrowse(s *mcp.Server, env *Env) {
 		convert(g.toc, 1)
 		out.Total = count(g.toc)
 		var b strings.Builder
-		fmt.Fprintf(&b, "%s (%s), %d entries:\n", g.path, g.root, out.Total)
+		fmt.Fprintf(&b, "%s: %s (%s), %d entries:\n", g.name, g.path, g.root, out.Total)
 		for _, n := range out.Entries {
 			line := strings.Repeat("  ", n.Depth-1) + "- " + n.Title
 			if n.URL != "" {
@@ -379,7 +387,7 @@ func registerBrowse(s *mcp.Server, env *Env) {
 						continue
 					}
 					p := get(g.Product)
-					p.Guides = append(p.Guides, guideOut{Path: g.Path, GuideType: g.GuideType, Pages: g.Pages})
+					p.Guides = append(p.Guides, guideOut{Name: g.Title(), Path: g.Path, GuideType: g.GuideType, Pages: g.Pages})
 				}
 				return nil
 			})

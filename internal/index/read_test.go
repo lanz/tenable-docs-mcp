@@ -86,3 +86,58 @@ func TestKeyFor(t *testing.T) {
 		t.Error("off-site key")
 	}
 }
+
+func TestGuideTitle(t *testing.T) {
+	for _, c := range []struct {
+		g    GuideInfo
+		want string
+	}{
+		{GuideInfo{Name: "Tenable Nessus User Guide", LandingTitle: "Welcome to Tenable Nessus 10.12.x"}, "Tenable Nessus User Guide"},
+		{GuideInfo{LandingTitle: "Welcome to Tenable Nessus 10.12.x"}, "Tenable Nessus 10.12.x"},
+		{GuideInfo{LandingTitle: "Welcome to the  Tenable SAML Quick Reference Guide"}, "Tenable SAML Quick Reference Guide"},
+		{GuideInfo{LandingTitle: "Getting Started with Tenable Nessus Upgrade Assistant"}, "Tenable Nessus Upgrade Assistant"},
+		{GuideInfo{LandingTitle: "DORA Regulation", Product: "Nessus"}, "DORA Regulation"},
+		// Titles that don't name the guide fall back to its product and guide type, then its path.
+		{GuideInfo{LandingTitle: "Overview", Product: "Security Center", GuideType: "Best Practices Guide"}, "Security Center Best Practices Guide"},
+		{GuideInfo{LandingTitle: "Introduction", GuideType: "Reference Guide", Path: "general-requirements"}, "Reference Guide"},
+		{GuideInfo{LandingTitle: "Welcome", Path: "integrations/Akeyless"}, "integrations/Akeyless"},
+		{GuideInfo{Path: "x"}, "x"},
+	} {
+		if got := c.g.Title(); got != c.want {
+			t.Errorf("%+v: title %q, want %q", c.g, got, c.want)
+		}
+	}
+}
+
+func TestPutTocKeepsName(t *testing.T) {
+	s := openTest(t, Key{Site: "en"})
+	g, _ := site.GuideOf("https://docs.tenable.com/nessus/Content/A.htm")
+	toc := []*site.TocEntry{{Title: "Welcome", URL: "https://docs.tenable.com/nessus/Content/A.htm"}}
+	name := func() string {
+		t.Helper()
+		var n string
+		if err := s.db.QueryRowContext(ctx, "SELECT name FROM tocs WHERE guide = 'nessus'").Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	g.Name = "Tenable Nessus User Guide"
+	if err := s.Update(ctx, func(tx *Tx) error { return tx.PutToc(g, toc) }); err != nil {
+		t.Fatal(err)
+	}
+	// A crawl has no names, and keeps the one the guide has.
+	g.Name = ""
+	if err := s.Update(ctx, func(tx *Tx) error { return tx.PutToc(g, toc) }); err != nil {
+		t.Fatal(err)
+	}
+	if n := name(); n != "Tenable Nessus User Guide" {
+		t.Errorf("name after a crawl = %q", n)
+	}
+	g.Name = "Tenable Nessus"
+	if err := s.Update(ctx, func(tx *Tx) error { return tx.PutToc(g, toc) }); err != nil {
+		t.Fatal(err)
+	}
+	if n := name(); n != "Tenable Nessus" {
+		t.Errorf("renamed = %q", n)
+	}
+}

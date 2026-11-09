@@ -288,15 +288,18 @@ func (t *Tx) Remove(pageURL string) (bool, error) {
 	return err == nil, err
 }
 
-// PutToc stores a guide's table of contents.
+// PutToc stores a guide's table of contents, and its name. A guide without a name keeps
+// the one it has: a crawl of the live sites has no names, and shouldn't lose a
+// published index's.
 func (t *Tx) PutToc(g site.Guide, toc []*site.TocEntry) error {
 	b, err := json.Marshal(toc)
 	if err != nil {
 		return err
 	}
-	_, err = t.exec(`INSERT INTO tocs (guide, root_url, entries, fetched_at) VALUES (?, ?, ?, ?)
-		ON CONFLICT (guide) DO UPDATE SET root_url = excluded.root_url, entries = excluded.entries, fetched_at = excluded.fetched_at`,
-		g.Path, g.RootURL, string(b), now())
+	_, err = t.exec(`INSERT INTO tocs (guide, root_url, entries, fetched_at, name) VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (guide) DO UPDATE SET root_url = excluded.root_url, entries = excluded.entries, fetched_at = excluded.fetched_at,
+			name = CASE WHEN excluded.name <> '' THEN excluded.name ELSE tocs.name END`,
+		g.Path, g.RootURL, string(b), now(), g.Name)
 	return err
 }
 

@@ -225,9 +225,9 @@ The server registers 18 tools. Each returns structured output (with a JSON schem
 | `search_docs` | Ranked sections that answer a question, each with its link, a snippet with matched words marked `«like this»`, product, guide type, version, language, location, last-modified date, and required roles. Also returns same-titled pages in other products (`also_in`), spelling suggestions when nothing matches, and the products that do match when a product filter excluded everything. | `query`, plus optional `product`, `guide_type`, `guide`, `version`, `language`, `release_notes`, `required_role`, and `limit` (1 to 25, default 8) |
 | `read_doc` | A section (link with `#anchor`) or a whole page (link without one) as Markdown, starting with a header that gives its location, product, version, required roles, source URL, and update date. Long content comes in parts. Returns the previous and next sections, and the page in other languages and versions. | `url`, `part`, and `max_chars` (1,000 to 30,000, default 8,000) |
 | `outline` | A page's headings with links and word counts, or a guide's pages from its table of contents. | `url` or `guide`, and `language` |
-| `browse_guide` | A guide's table of contents in reading order, with depths, links, and counts of entries below the depth shown. | `guide` (a path such as `nessus/10_8`, or any page's URL), `language`, and `depth` (1 to 10, default 3) |
+| `browse_guide` | A guide's name and table of contents in reading order, with depths, links, and counts of entries below the depth shown. | `guide` (a path such as `nessus/10_8`, or any page's URL), `language`, and `depth` (1 to 10, default 3) |
 | `related_pages` | A page's parent, previous, and next entries in its table of contents; the docs pages it links to and that link to it; same-titled pages in other products; and the page in other languages and versions. | `url` |
-| `list_products` | Every product and language in the index, with page counts, each product's English guides and their older versions, and when each language was last indexed. | none |
+| `list_products` | Every product and language in the index, with page counts, each product's English guides with their names and older versions, and when each language was last indexed. | none |
 
 ### Specific questions
 
@@ -442,7 +442,7 @@ Each time a shard is rebuilt, the new build gets the next number, and the server
 
 `snapshot/` holds the downloaded snapshot files and their manifest, so a shard can be rebuilt without downloading it again. `updates.json` records the last update check, so every process using the folder knows when the next one is due. Each shard records the checksum of the snapshot file it was built from, which is how an update tells which shards changed.
 
-A shard is created only when there are pages for it; a full build has 13. Each shard records its key and tokenizer in a `meta` table and its schema version in `PRAGMA user_version` (currently 3). Opening a shard written by a newer build, or a file that holds a different shard or tokenizer, fails with an error instead of returning wrong results. Shards run in WAL mode.
+A shard is created only when there are pages for it; a full build has 13. Each shard records its key and tokenizer in a `meta` table and its schema version in `PRAGMA user_version` (currently 4). Opening a shard written by a newer build, or a file that holds a different shard or tokenizer, fails with an error instead of returning wrong results. Shards run in WAL mode.
 
 | Table | Holds |
 | --- | --- |
@@ -453,7 +453,7 @@ A shard is created only when there are pages for it; a full build has 13. Each s
 | `releases` | Release-note entries with product, version, and date |
 | `glossary` | Terms and definitions |
 | `links` | Links between pages |
-| `tocs` | Each guide's table of contents, as JSON |
+| `tocs` | Each guide's table of contents, as JSON, and its name |
 | `vocabulary` | Indexed words and their frequencies, for spelling suggestions |
 | `changes`, `section_changes` | The change history: pages added, updated, or removed, and for an update, the sections that changed and the lines that differ |
 
@@ -555,11 +555,13 @@ A command exits with 0 when the tool found something, 1 when it found nothing or
 | `tenable-docs-mcp index crawl [-sites en,jp] [-index DIR]` | Build or update the index from the live sites: a site the index has nothing for is read in full, and after that only what changed |
 | `tenable-docs-mcp index import [-sites en,jp] [-index DIR] SNAPSHOT` | Verify a snapshot folder and build the index from it |
 | `tenable-docs-mcp index verify SNAPSHOT` | Check a snapshot's files against its manifest |
-| `tenable-docs-mcp index build -source SITES [-sites en,jp] [-out DIR \| -index DIR] [-json]` | Build a snapshot (`-out`) or an index (`-index`) from local copies of the sites |
+| `tenable-docs-mcp index build -source SITES [-sites en,jp] [-guide-names FILE] [-out DIR \| -index DIR] [-json]` | Build a snapshot (`-out`) or an index (`-index`) from local copies of the sites |
 | `tenable-docs-mcp version` | Print the version |
 | `tenable-docs-mcp help` | Show usage |
 
 `-source` takes `code=folder` pairs separated by semicolons, such as `"en=/data/en;jp=/data/jp"`, on every platform. On Linux and macOS, colons work too. `TDM_SITE_DIRS` uses the same format.
+
+`-guide-names` names the guides, from a JSON file of site codes to guide paths to names, such as `{"en": {"nessus": "Tenable Nessus User Guide"}}`. The report lists the guides it doesn't name. A guide without a name, including every guide in an index built only from the live sites, is called by its landing page's title, or else its product and guide type. The prebuilt index has names, and reading the live sites to update it keeps them.
 
 The index folder is, in order: the `-index` flag, `$TDM_INDEX_DIR`, or `tenable-docs-mcp/index` in the user cache folder.
 

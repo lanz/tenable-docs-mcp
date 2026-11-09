@@ -275,3 +275,31 @@ func (discard) Page(context.Context, index.Key, build.Page) error { return nil }
 func (discard) Toc(context.Context, index.Key, site.Guide, []*site.TocEntry) error {
 	return nil
 }
+
+func TestGuideNamesRoundTrip(t *testing.T) {
+	src, sites := source(t)
+	dir := filepath.Join(t.TempDir(), "snapshot")
+	w, err := NewWriter(dir, "tenable-docs-mcp test", builtAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]map[string]string{"en": {"widget": "Widget Manager User Guide"}}
+	if _, err := build.Run(ctx, build.Options{Source: src, Sites: sites, GuideNames: names}, w); err != nil {
+		t.Fatal(err)
+	}
+	m, err := w.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ix := importSnapshot(t, dir, m)
+	err = ix.With(index.Key{Site: "en"}, func(s *index.Shard) error {
+		g, ok, err := s.Guide(ctx, "widget")
+		if err != nil || !ok || g.Name != "Widget Manager User Guide" {
+			t.Errorf("guide = %+v %v %v", g, ok, err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

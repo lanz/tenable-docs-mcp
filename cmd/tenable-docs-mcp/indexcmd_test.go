@@ -118,6 +118,9 @@ func TestIndexUsage(t *testing.T) {
 		{"index", "build", "-source", "pt=/x"},
 		{"index", "build", "-source", src, "-sites", "fr"},
 		{"index", "build", "-source", src, "-out", "a", "-index", "b"},
+		{"index", "build", "-source", src, "-guide-names", filepath.Join(t.TempDir(), "missing.json")},
+		{"index", "build", "-source", src, "-guide-names", writeFile(t, "bad-site.json", `{"pt": {"nessus": "Nessus"}}`)},
+		{"index", "build", "-source", src, "-guide-names", writeFile(t, "bad.json", `{"en": ["nessus"]}`)},
 		{"index", "import"},
 		{"index", "verify"},
 	} {
@@ -130,5 +133,14 @@ func TestIndexUsage(t *testing.T) {
 	}
 	if code, out, _ := runCmd("help"); code != 0 || !strings.Contains(out, "index build") {
 		t.Errorf("help = %s", out)
+	}
+}
+
+func TestIndexBuildGuideNames(t *testing.T) {
+	names := writeFile(t, "names.json", `{"jp": {}}`)
+	code, out, errOut := runCmd("index", "build", "-source", testSources(t), "-sites", "en,jp", "-guide-names", names,
+		"-index", filepath.Join(t.TempDir(), "index"))
+	if code != 0 || !strings.Contains(out, "1 guide has no name: en:widget") {
+		t.Errorf("build = %d\n%s\n%s", code, out, errOut)
 	}
 }
