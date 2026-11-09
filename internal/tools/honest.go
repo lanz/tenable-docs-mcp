@@ -263,7 +263,7 @@ func registerHonest(s *mcp.Server, env *Env) {
 		// Offer to send it; the SDK calls this tool again with the user's answer.
 		return &mcp.CallToolResult{
 			InputRequests: mcp.InputRequestMap{gapFormID: gapForm(page, strings.TrimSpace(in.Question), env.Info.Version)},
-			RequestState:  gapState(page, now),
+			RequestState:  gapState(page, in.Question, now),
 		}, gapOut{}, nil
 	})
 

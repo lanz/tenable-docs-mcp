@@ -22,6 +22,9 @@ func (s *Searcher) suggest(ctx context.Context, terms []string) []string {
 	out := make([]string, len(terms))
 	for i, t := range terms {
 		out[i] = t
+		if ctx.Err() != nil {
+			continue // the caller has given up; leave the rest as they are
+		}
 		if s.vocab[t] > 0 || utf8.RuneCountInString(t) < 4 || !latin(t) {
 			continue
 		}

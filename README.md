@@ -406,13 +406,13 @@ The server reads the file when it starts. If a line can't be read, the server sa
 | `ok` | The page is in the index, and its anchor is one of the page's headings | No |
 | `older_version` | The page is for an older version; `current_url` is the current one | No |
 | `translation` | The page is a translation; `english_url` is the current English page | No |
-| `anchor_unknown` | The anchor isn't a heading; it may be on a smaller element | No |
+| `anchor_unknown` | The anchor isn't a heading; it may be on a smaller element. When a heading's anchor matches in another case, the checker suggests it: browsers match anchors exactly | No |
 | `anchor_missing` | A live check found no element with that `id` or `name` | Yes |
 | `moved` | A live check found that the site redirects the link | No |
 | `not_found` | The page isn't in the index, or, with a live check, on the site | Yes |
 | `not_indexed` | The index has no docs for that language or version set | No |
 
-For a broken link, the checker suggests the current or English version of the page when the index has it, or else the best search result for the words of the file name (`InstallNessusLinux.htm` becomes "Install Nessus Linux"). With `check_live` (or `-live`), it fetches the live page to settle anchors that aren't headings and pages the index doesn't have yet.
+For a broken link, the checker suggests the current or English version of the page when the index has it, or else the best search result for the words of the file name (`InstallNessusLinux.htm` becomes "Install Nessus Linux"). With `check_live` (or `-live`), it fetches the live page to settle anchors that aren't headings and pages the index doesn't have yet: each page once, and at most 50 pages a call.
 
 For documentation writers, `verify-links` also checks draft topics: `-base` gives the draft's published URL, and a broken relative link whose target file exists beside the draft is noted as a topic in the source project that isn't published.
 
@@ -592,7 +592,7 @@ Every other host is refused, including redirects to other hosts and redirects fr
 
 ### What it sends to Tenable
 
-Only feedback or a gap report that the user writes, or approves, in a form their MCP client shows them, or that they send themselves with `tenable-docs-mcp gaps submit`. Nothing is sent without that. The assistant can't write the user's feedback: `open_feedback_form` has no argument for a comment, and the gap form pre-fills the question for the user to edit. Forms expire after 30 minutes and are bound to the page they were opened for. Sending is limited to one item a minute and ten a day, across every session on the computer. For clients that can't show forms, sending is off, and the tools tell the assistant to give the user the page's link instead.
+Only feedback or a gap report that the user writes, or approves, in a form their MCP client shows them, or that they send themselves with `tenable-docs-mcp gaps submit`. Nothing is sent without that. The assistant can't write the user's feedback: `open_feedback_form` has no argument for a comment, and the gap form pre-fills the question for the user to edit. Forms expire after 30 minutes, are bound to the page (and, for a gap, the question) they were opened for, and each form's answer is sent once. Sending is limited to one item a minute and ten a day, across every session on the computer. For clients that can't show forms, sending is off, and the tools tell the assistant to give the user the page's link instead.
 
 ### What it stores, on this computer
 
@@ -613,6 +613,7 @@ The optional HTTP transport is for clients on the same machine:
 - Requests whose `Host` header isn't a loopback name are rejected, which blocks DNS rebinding.
 - Cross-origin browser requests are refused, so a web page can't drive a local server.
 - It sets a 10-second header read timeout, a 2-minute idle timeout, and a 64 KiB header limit. There's no write timeout, because streamed responses can stay open.
+- It has no authentication: any program or user on the machine can connect, as with any local server, and use every tool, including the feedback and gap forms, which the connecting client answers. On a computer you share with other users, use stdio, which only the client that started the server can reach.
 
 ### Input handling
 

@@ -228,3 +228,59 @@ func TestCheckLive(t *testing.T) {
 		t.Errorf("failed page check = %+v", r)
 	}
 }
+
+// countingLive counts fetches.
+type countingLive struct {
+	*fakeLive
+	n int
+}
+
+func (c *countingLive) Fetch(ctx context.Context, req site.Request) (*site.Response, error) {
+	c.n++
+	return c.fakeLive.Fetch(ctx, req)
+}
+
+// One call fetches each live page once, and only so many pages.
+func TestCheckLiveLimits(t *testing.T) {
+	c := checker(t)
+	live := &countingLive{fakeLive: &fakeLive{pages: map[string]string{en + "nessus/Content/Install.htm": `<p id="A">a</p>`}}}
+	c.Live = live
+	var links []Found
+	for i := range 40 {
+		links = append(links, Found{URL: fmt.Sprintf("%snessus/Content/Install.htm#X%d", en, i)})
+	}
+	for i := range MaxLiveFetches + 10 {
+		links = append(links, Found{URL: fmt.Sprintf("%snessus/Content/Missing%d.htm", en, i)})
+	}
+	res, err := c.Check(ctx, links)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live.n != MaxLiveFetches {
+		t.Errorf("%d live fetches, want %d", live.n, MaxLiveFetches)
+	}
+	last := res[len(res)-1]
+	if last.Status != NotFound || !strings.Contains(last.Note, "limit of") {
+		t.Errorf("past the limit = %+v", last)
+	}
+	// The next call starts again.
+	if r := checkOne(t, c, en+"nessus/Content/Install.htm#A"); r.Status != OK {
+		t.Errorf("next call = %+v", r)
+	}
+}
+
+// Browsers match anchors exactly, so one in the wrong case is reported, with the fix.
+func TestCheckAnchorCase(t *testing.T) {
+	c := checker(t)
+	r := checkOne(t, c, en+"nessus/Content/Install.htm#steps")
+	if r.Status != AnchorUnknown || r.Suggestion == nil || r.Suggestion.URL != en+"nessus/Content/Install.htm#Steps" {
+		t.Errorf("result = %+v", r)
+	}
+	c.Live = &fakeLive{pages: map[string]string{en + "nessus/Content/Install.htm": `<p ID="Hidden">x</p>`}}
+	if r := checkOne(t, c, en+"nessus/Content/Install.htm#hidden"); r.Status != AnchorMissing {
+		t.Errorf("live, wrong case = %s", r.Status)
+	}
+	if r := checkOne(t, c, en+"nessus/Content/Install.htm#Hidden"); r.Status != OK {
+		t.Errorf("live, upper-case attribute = %s", r.Status)
+	}
+}

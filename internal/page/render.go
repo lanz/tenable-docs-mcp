@@ -133,11 +133,17 @@ func (r *renderer) markBlocks(root *html.Node) {
 }
 
 type ctx struct {
-	top   bool // directly in the page's content, where headings start sections
-	depth int
+	top    bool // directly in the page's content, where headings start sections
+	depth  int
+	quotes int // blockquotes this is in
 }
 
-func (c ctx) inner() ctx { return ctx{depth: c.depth} }
+func (c ctx) inner() ctx { return ctx{depth: c.depth, quotes: c.quotes} }
+
+// maxQuotes is how deeply blockquotes nest in the Markdown. Each level prefixes every
+// line inside it again, so deep nesting costs time and output out of all proportion;
+// deeper ones are rendered as the blocks they hold.
+const maxQuotes = 8
 
 // blocks renders an element's children as blocks. Runs of inline content become
 // paragraphs.
@@ -196,7 +202,12 @@ func (r *renderer) block(n *html.Node, c ctx) []block {
 	case "hr":
 		return []block{{kind: kRule, text: "---"}}
 	case "blockquote":
-		return quote(r.blocks(n, c.inner()))
+		inner := c.inner()
+		if inner.quotes >= maxQuotes {
+			return r.blocks(n, inner)
+		}
+		inner.quotes++
+		return quote(r.blocks(n, inner))
 	case "iframe", "video":
 		return r.media(n)
 	case "dt":

@@ -308,6 +308,9 @@ func registerSpecific(s *mcp.Server, env *Env) {
 			"product if known. Cite the url it returns.",
 		Annotations: readOnly("Find a setting"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in settingIn) (*mcp.CallToolResult, settingsOut, error) {
+		if err := checkLength("query", in.Query); err != nil {
+			return nil, settingsOut{}, err
+		}
 		if err := env.ready(); err != nil {
 			return nil, settingsOut{}, err
 		}
@@ -404,6 +407,9 @@ func registerSpecific(s *mcp.Server, env *Env) {
 			"closest pages.",
 		Annotations: readOnly("Required role"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in roleIn) (*mcp.CallToolResult, rolesOut, error) {
+		if err := checkLength("task", in.Task); err != nil {
+			return nil, rolesOut{}, err
+		}
 		if err := env.ready(); err != nil {
 			return nil, rolesOut{}, err
 		}
@@ -466,6 +472,9 @@ func registerSpecific(s *mcp.Server, env *Env) {
 			"such as \"Nessus ports\" or \"Security Center hardware for 10,000 hosts\".",
 		Annotations: readOnly("Requirements"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in requirementsIn) (*mcp.CallToolResult, requirementsResultOut, error) {
+		if err := checkLength("query", in.Query); err != nil {
+			return nil, requirementsResultOut{}, err
+		}
 		if err := env.ready(); err != nil {
 			return nil, requirementsResultOut{}, err
 		}
@@ -559,6 +568,9 @@ func registerSpecific(s *mcp.Server, env *Env) {
 			"contain. Use it for what's new, when something changed, or which release fixed an issue.",
 		Annotations: readOnly("Release notes"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in releaseIn) (*mcp.CallToolResult, releasesOut, error) {
+		if err := checkLength("query", in.Query); err != nil {
+			return nil, releasesOut{}, err
+		}
 		if err := env.ready(); err != nil {
 			return nil, releasesOut{}, err
 		}
@@ -625,6 +637,9 @@ func registerSpecific(s *mcp.Server, env *Env) {
 			"refers to, including retired names (Tenable.io is now Tenable Vulnerability Management).",
 		Annotations: readOnly("Define a term"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in termIn) (*mcp.CallToolResult, termOut, error) {
+		if err := checkLength("term", in.Term); err != nil {
+			return nil, termOut{}, err
+		}
 		if err := env.ready(); err != nil {
 			return nil, termOut{}, err
 		}

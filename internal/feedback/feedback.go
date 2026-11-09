@@ -207,11 +207,12 @@ type Sender struct {
 // ErrRateLimited is returned when sending now would pass a rate limit.
 var ErrRateLimited = errors.New("rate limited")
 
-var mu sync.Mutex
-
 // sent is one line of the log.
 type sent struct {
 	Time time.Time `json:"time"`
+	// Unconfirmed marks an item whose request failed partway, so the service may have
+	// taken it; it counts toward the limits all the same.
+	Unconfirmed bool `json:"unconfirmed,omitempty"`
 	payload
 }
 
@@ -225,8 +226,11 @@ func (s *Sender) Check() error {
 	if s.Now != nil {
 		now = s.Now
 	}
-	mu.Lock()
-	defer mu.Unlock()
+	unlock, err := s.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	if wait, err := s.check(now().UTC()); err != nil {
 		return err
 	} else if wait != "" {
@@ -247,8 +251,13 @@ func (s *Sender) Send(ctx context.Context, p *Prepared) error {
 	if s.Now != nil {
 		now = s.Now
 	}
-	mu.Lock()
-	defer mu.Unlock()
+	// Every process on the computer shares the limits, so the check, the send, and the
+	// record are made under a lock on the log.
+	unlock, err := s.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	t := now().UTC()
 	if wait, err := s.check(t); err != nil {
 		return err
@@ -268,6 +277,10 @@ func (s *Sender) Send(ctx context.Context, p *Prepared) error {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
+		if ctx.Err() == nil {
+			// The service may have taken it before the connection failed.
+			_ = s.record(sent{Time: t, Unconfirmed: true, payload: p.body})
+		}
 		return fmt.Errorf("send feedback: %w", err)
 	}
 	defer resp.Body.Close()
@@ -298,6 +311,9 @@ func (s *Sender) check(t time.Time) (string, error) {
 	}
 	minute, day := 0, 0
 	for _, e := range log {
+		if e.Time.After(t) {
+			continue // dated after now: the clock went back
+		}
 		if t.Sub(e.Time) < time.Minute {
 			minute++
 		}
@@ -329,6 +345,50 @@ func (s *Sender) read() ([]sent, error) {
 		}
 	}
 	return out, nil
+}
+
+// mu serializes this process's sends; lock adds a lock file for other processes.
+var mu sync.Mutex
+
+// lockWait is how long a send waits for another process's; lockStale is how old a lock
+// file must be to be taken as left by a process that stopped (a send times out after
+// 30 seconds).
+var (
+	lockWait  = 10 * time.Second
+	lockStale = 2 * time.Minute
+)
+
+// lock takes the log's lock, shared by every process on the computer, and returns the
+// function that releases it.
+func (s *Sender) lock() (func(), error) {
+	mu.Lock()
+	if err := os.MkdirAll(filepath.Dir(s.LogFile), 0o700); err != nil {
+		mu.Unlock()
+		return nil, err
+	}
+	path := s.LogFile + ".lock"
+	deadline := time.Now().Add(lockWait)
+	for {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			fmt.Fprintln(f, os.Getpid())
+			f.Close()
+			return func() { _ = os.Remove(path); mu.Unlock() }, nil
+		}
+		if !errors.Is(err, os.ErrExist) {
+			mu.Unlock()
+			return nil, err
+		}
+		if info, err := os.Stat(path); err == nil && time.Since(info.ModTime()) > lockStale {
+			_ = os.Remove(path)
+			continue
+		}
+		if time.Now().After(deadline) {
+			mu.Unlock()
+			return nil, fmt.Errorf("%w: another tenable-docs-mcp is sending feedback; try again shortly", ErrRateLimited)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
 
 func (s *Sender) record(e sent) error {

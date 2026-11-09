@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // DefaultDir returns the folder the index is kept in: tenable-docs-mcp/index under the
@@ -134,7 +135,10 @@ func (ix *Index) Reload() (bool, error) {
 		if open && gens[0] <= cur {
 			continue
 		}
-		s, err := OpenShard(genPath(ix.Dir, k, gens[0]), k)
+		s, err := openExisting(genPath(ix.Dir, k, gens[0]), k)
+		if errors.Is(err, errNoBuild) {
+			continue // installed and replaced meanwhile; the next reload finds the newer one
+		}
 		if err != nil {
 			errs = append(errs, err)
 			continue
@@ -219,15 +223,22 @@ func (ix *Index) Close() error {
 // buildPrefix starts the name of a shard's file while it's being built.
 func buildPrefix(k Key) string { return k.String() + ".building." }
 
+// staleBuild is how old an unfinished build's file must be to be taken as left by a
+// process that stopped. Writing a build keeps its file's time current.
+const staleBuild = 6 * time.Hour
+
 // Build opens a new, empty shard beside the live one, to fill and then pass to
 // Install. Its file has a name of its own, so builds in two processes don't collide.
 // Unfinished builds of the same shard left by a process that stopped are deleted.
 func (ix *Index) Build(k Key) (*Shard, error) {
 	if entries, err := os.ReadDir(ix.Dir); err == nil {
 		for _, e := range entries {
-			if strings.HasPrefix(e.Name(), buildPrefix(k)) && strings.HasSuffix(e.Name(), ".db") {
-				// A build in progress in another process has its file open; on
-				// Windows, that keeps it from being deleted.
+			if !strings.HasPrefix(e.Name(), buildPrefix(k)) || !strings.HasSuffix(e.Name(), ".db") {
+				continue
+			}
+			// Delete only builds left by a process that stopped: another process may
+			// be writing a recent one, and on Linux and macOS deleting it would succeed.
+			if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > staleBuild {
 				_ = removeDB(filepath.Join(ix.Dir, e.Name()))
 			}
 		}

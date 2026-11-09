@@ -88,7 +88,31 @@ type Shard struct {
 // OpenShard opens or creates a shard's file, and brings its schema up to date.
 func OpenShard(path string, key Key) (*Shard, error) { return openShard(path, key, migrations) }
 
+// errNoBuild is a build file that isn't there, for openExisting.
+var errNoBuild = errors.New("no such build")
+
+// openExisting opens a shard's file only if it exists: another process may have
+// deleted a build after it was listed, and opening it must not create an empty one.
+func openExisting(path string, key Key) (*Shard, error) {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return nil, errNoBuild
+	}
+	s, err := openShardMode(path, key, migrations, "rw")
+	if err != nil {
+		if _, serr := os.Stat(path); errors.Is(serr, os.ErrNotExist) {
+			return nil, errNoBuild
+		}
+	}
+	return s, err
+}
+
 func openShard(path string, key Key, migs []migration) (*Shard, error) {
+	return openShardMode(path, key, migs, "")
+}
+
+// openShardMode opens a shard's file; mode "rw" fails if the file doesn't exist, and
+// "" creates it.
+func openShardMode(path string, key Key, migs []migration, mode string) (*Shard, error) {
 	tok, err := Tokenizer(key.Site)
 	if err != nil {
 		return nil, err
@@ -100,6 +124,9 @@ func openShard(path string, key Key, migs []migration) (*Shard, error) {
 		q.Add("_pragma", p)
 	}
 	q.Set("_txlock", "immediate")
+	if mode != "" {
+		q.Set("mode", mode)
+	}
 	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path)+"?"+q.Encode())
 	if err != nil {
 		return nil, err
@@ -195,6 +222,15 @@ func (s *Shard) Update(ctx context.Context, fn func(*Tx) error) error {
 		tx.close()
 		sqlTx.Rollback()
 		return err
+	}
+	if tx.recorded {
+		// A shard updated in place, as by a crawl, is never rebuilt, so its history is
+		// trimmed here, as TakeHistory trims a rebuilt one's.
+		if err := tx.pruneHistory(); err != nil {
+			tx.close()
+			sqlTx.Rollback()
+			return err
+		}
 	}
 	tx.close()
 	return sqlTx.Commit()

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -58,29 +59,66 @@ var formKey = func() []byte {
 }()
 
 // formState binds a form to the page, the helpful answer, and a time, so the answer
-// comes back to the feedback it was asked for.
+// comes back to the feedback it was asked for. Each form also gets a random nonce, so
+// its answer is sent once (see claimForm).
 func formState(page string, helpful bool, at time.Time) string {
-	var ts [8]byte
-	binary.BigEndian.PutUint64(ts[:], uint64(at.Unix()))
+	var head [16]byte
+	binary.BigEndian.PutUint64(head[:8], uint64(at.Unix()))
+	if _, err := rand.Read(head[8:]); err != nil {
+		panic(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(append(head[:], formMAC(head[:], page, helpful)...))
+}
+
+func formMAC(head []byte, page string, helpful bool) []byte {
 	m := hmac.New(sha256.New, formKey)
-	m.Write(ts[:])
+	m.Write(head)
 	fmt.Fprintf(m, "%t\x00%s", helpful, page)
-	return base64.RawURLEncoding.EncodeToString(append(ts[:], m.Sum(nil)[:16]...))
+	return m.Sum(nil)[:16]
 }
 
 func checkFormState(state, page string, helpful bool, now time.Time) error {
 	raw, err := base64.RawURLEncoding.DecodeString(state)
-	if err != nil || len(raw) != 24 {
+	if err != nil || len(raw) != 32 {
 		return errors.New("that form answer isn't for a form this server showed; nothing was sent")
 	}
-	at := time.Unix(int64(binary.BigEndian.Uint64(raw[:8])), 0)
-	if !hmac.Equal([]byte(formState(page, helpful, at)), []byte(state)) {
+	if !hmac.Equal(formMAC(raw[:16], page, helpful), raw[16:]) {
 		return errors.New("that form answer is for other feedback; nothing was sent")
 	}
+	at := time.Unix(int64(binary.BigEndian.Uint64(raw[:8])), 0)
 	if now.Sub(at) > formTTL || at.After(now.Add(time.Minute)) {
 		return errors.New("the feedback form expired; nothing was sent")
 	}
 	return nil
+}
+
+// usedForms holds the states of forms whose answers are being sent or were sent, until
+// they expire, so one answer can't be sent twice: by a client that retries, or by
+// anything that replays it.
+var usedForms = struct {
+	sync.Mutex
+	m map[string]time.Time
+}{m: map[string]time.Time{}}
+
+// claimForm marks a checked form state as used. If sending then fails, release gives
+// it back, so the user can try again.
+func claimForm(state string, now time.Time) (release func(), err error) {
+	usedForms.Lock()
+	defer usedForms.Unlock()
+	for s, at := range usedForms.m {
+		if now.Sub(at) > formTTL+time.Minute {
+			delete(usedForms.m, s)
+		}
+	}
+	if _, ok := usedForms.m[state]; ok {
+		return nil, errors.New("that form answer was already sent, or is being sent; nothing more was sent")
+	}
+	usedForms.m[state] = now
+	return func() {
+		usedForms.Lock()
+		delete(usedForms.m, state)
+		usedForms.Unlock()
+	}, nil
 }
 
 func registerFeedback(s *mcp.Server, env *Env) {
@@ -190,7 +228,12 @@ func (e *Env) sendForm(ctx context.Context, req *mcp.CallToolRequest, in feedbac
 	if err != nil {
 		return nil, feedbackOut{}, fmt.Errorf("not sent: %w", err)
 	}
+	release, err := claimForm(req.Params.RequestState, now)
+	if err != nil {
+		return nil, feedbackOut{}, err
+	}
 	if err := e.Feedback.Send(ctx, p); err != nil {
+		release()
 		if errors.Is(err, feedback.ErrRateLimited) {
 			return nil, feedbackOut{}, fmt.Errorf("not sent: %w", err)
 		}
