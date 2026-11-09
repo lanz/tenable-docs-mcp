@@ -55,3 +55,21 @@ jobs:
         with:
           go-version: stable
       - run: scripts/build-release.sh v0.0.0-ci
+      - name: Check the Claude Desktop extension
+        run: |
+          mkdir -p "$RUNNER_TEMP/mcpb"
+          unzip -q dist/tenable-docs-mcp_0.0.0-ci.mcpb -d "$RUNNER_TEMP/mcpb"
+          npx --yes @anthropic-ai/mcpb@2.1.2 validate "$RUNNER_TEMP/mcpb/manifest.json"
+          "$RUNNER_TEMP/mcpb/server/linux/tenable-docs-mcp" version
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Build the container image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: tenable-docs-mcp:ci
+      - name: Run the container image
+        run: |
+          docker run --rm tenable-docs-mcp:ci version
+          docker image inspect tenable-docs-mcp:ci --format '{{ index .Config.Labels "io.modelcontextprotocol.server.name" }}' | grep -qx io.github.lanz/tenable-docs-mcp

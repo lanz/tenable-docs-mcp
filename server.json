@@ -1,0 +1,50 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.lanz/tenable-docs-mcp",
+  "title": "Tenable Docs MCP",
+  "description": "Cited answers from Tenable's product documentation, in every product, version, and language",
+  "repository": {
+    "url": "https://github.com/lanz/tenable-docs-mcp",
+    "source": "github",
+    "id": "1448588669"
+  },
+  "websiteUrl": "https://github.com/lanz/tenable-docs-mcp",
+  "version": "0.0.0-dev",
+  "packages": [
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/lanz/tenable-docs-mcp/releases/download/RELEASE_TAG/MCPB_FILE",
+      "fileSha256": "MCPB_SHA256",
+      "transport": {
+        "type": "stdio"
+      }
+    },
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/lanz/tenable-docs-mcp:0.0.0-dev",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--mount",
+          "value": "type=volume,src=tenable-docs-mcp,dst=/data",
+          "description": "Keeps the documentation index between runs, so it isn't downloaded and built again each time"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "TDM_SITES",
+          "description": "Only download these sites' docs, such as en,jp (default: all eight)",
+          "isRequired": false
+        },
+        {
+          "name": "TDM_INDEX_URL",
+          "description": "off turns automatic downloads and updates of the index off",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}
