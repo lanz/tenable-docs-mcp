@@ -205,9 +205,13 @@ func TestConfig(t *testing.T) {
 		!strings.Contains(out, `my index" -- "`+slashed+`"`) {
 		t.Errorf("claude-code:\n%s", out)
 	}
-	// The JSON clients: each block parses, with the path as given.
+	if !strings.Contains(out, "claude mcp add --scope user --transport http tenable-developer https://developer.tenable.com/mcp") {
+		t.Errorf("claude-code lacks the Developer Portal:\n%s", out)
+	}
+	// The JSON clients: each block parses, with the path as given, and all but Claude
+	// Desktop (which adds remote servers as connectors) set up the Developer Portal too.
 	blocks := strings.Split(out, "\n# ")
-	jsons := 0
+	jsons, portals := 0, 0
 	for _, b := range blocks {
 		start := strings.Index(b, "{")
 		if start < 0 {
@@ -226,12 +230,29 @@ func TestConfig(t *testing.T) {
 			if env, _ := entry["env"].(map[string]any); !strings.HasSuffix(env["TDM_INDEX_DIR"].(string), "my index") {
 				t.Errorf("env = %v", entry["env"])
 			}
+			if p := servers["tenable-developer"]; p != nil {
+				if p["url"] != "https://developer.tenable.com/mcp" && p["httpUrl"] != "https://developer.tenable.com/mcp" {
+					t.Errorf("developer portal = %v", p)
+				}
+				portals++
+			}
 		}
 		jsons++
 	}
 	// On Windows, JSON needs the backslashes doubled.
-	if jsons != 3 || !strings.Contains(out, `"type": "stdio"`) || runtime.GOOS == "windows" && !strings.Contains(out, `C:\\Program Files`) {
-		t.Errorf("%d JSON blocks:\n%s", jsons, out)
+	if jsons != 5 || portals != 4 || !strings.Contains(out, `"type": "stdio"`) || !strings.Contains(out, `"httpUrl"`) ||
+		runtime.GOOS == "windows" && !strings.Contains(out, `C:\\Program Files`) {
+		t.Errorf("%d JSON blocks, %d with the Developer Portal:\n%s", jsons, portals, out)
+	}
+	if !strings.Contains(out, "For API questions, add https://developer.tenable.com/mcp under Settings > Connectors") {
+		t.Errorf("claude-desktop lacks the connector note:\n%s", out)
+	}
+	// Codex: TOML, with the path as a literal string, so a Windows path keeps its
+	// backslashes as they are.
+	if !strings.Contains(out, "[mcp_servers.tenable-docs]\ncommand = '"+bin+"'\n") ||
+		!strings.Contains(out, "[mcp_servers.tenable-docs.env]\nTDM_INDEX_DIR = '") ||
+		!strings.Contains(out, "[mcp_servers.tenable-developer]\nurl = 'https://developer.tenable.com/mcp'") {
+		t.Errorf("codex:\n%s", out)
 	}
 	// One client, and a bad one.
 	if code, out, _ := runCmd("config", "-client", "cursor"); code != 0 || strings.Contains(out, "claude mcp add") || !strings.Contains(out, "~/.cursor/mcp.json") {
@@ -412,5 +433,17 @@ func TestGapsSubmitStopsAtTheLimit(t *testing.T) {
 	recs, _ := gaps.Read(file)
 	if recs[1].SentAt.IsZero() == false {
 		t.Error("the refused question was marked sent")
+	}
+}
+
+func TestTOMLString(t *testing.T) {
+	for in, want := range map[string]string{
+		`C:\Program Files\x.exe`: `'C:\Program Files\x.exe'`,
+		"/usr/local/bin/x":       "'/usr/local/bin/x'",
+		`C:\it's here`:           `"C:\\it's here"`,
+	} {
+		if got := tomlString(in); got != want {
+			t.Errorf("tomlString(%q) = %s, want %s", in, got, want)
+		}
 	}
 }

@@ -19,7 +19,14 @@ import (
 )
 
 // configClients are the clients config prints settings for, in order.
-var configClients = []string{"claude-code", "claude-desktop", "vscode", "cursor"}
+var configClients = []string{"claude-code", "claude-desktop", "vscode", "cursor", "devin-desktop", "gemini", "codex"}
+
+// developerPortal is the Tenable Developer Portal's MCP server, for API questions,
+// which config sets up beside this one.
+const (
+	developerPortal     = "https://developer.tenable.com/mcp"
+	developerPortalName = "tenable-developer"
+)
 
 // executable returns this binary's path; tests replace it.
 var executable = func() (string, error) {
@@ -77,39 +84,79 @@ func configCmd(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// clientConfig is one client's settings, with a heading saying where they go.
+// clientConfig is one client's settings for this server and the Developer Portal's,
+// with a heading saying where they go.
 func clientConfig(client, bin string, env map[string]string) string {
 	var b strings.Builder
+	local := func() map[string]any { return map[string]any{"command": bin} }
 	switch client {
 	case "claude-code":
-		b.WriteString("# Claude Code: run this command\n")
+		b.WriteString("# Claude Code: run these commands\n")
 		// The name goes before -e, which takes any number of values; -- ends them.
 		b.WriteString("claude mcp add --scope user tenable-docs")
 		for _, k := range sortedKeys(env) {
 			b.WriteString(" -e " + shellQuote(k+"="+filepath.ToSlash(env[k])))
 		}
 		b.WriteString(" -- " + shellQuote(filepath.ToSlash(bin)) + "\n")
+		fmt.Fprintf(&b, "claude mcp add --scope user --transport http %s %s\n", developerPortalName, developerPortal)
 	case "claude-desktop":
-		fmt.Fprintf(&b, "# Claude Desktop: add to %s (Settings > Developer > Edit Config)\n", desktopConfigPath())
-		b.WriteString(jsonConfig("mcpServers", map[string]any{"command": bin}, env))
+		fmt.Fprintf(&b, "# Claude Desktop: add to %s (Settings > Developer > Edit Config).\n", desktopConfigPath())
+		fmt.Fprintf(&b, "# For API questions, add %s under Settings > Connectors > Add custom connector.\n", developerPortal)
+		b.WriteString(jsonConfig("mcpServers", map[string]map[string]any{"tenable-docs": local()}, env))
 	case "vscode":
 		b.WriteString("# VS Code: add to .vscode/mcp.json in a workspace, or to your user mcp.json\n")
-		b.WriteString(jsonConfig("servers", map[string]any{"type": "stdio", "command": bin}, env))
+		b.WriteString(jsonConfig("servers", map[string]map[string]any{
+			"tenable-docs":      {"type": "stdio", "command": bin},
+			developerPortalName: {"type": "http", "url": developerPortal},
+		}, env))
 	case "cursor":
 		b.WriteString("# Cursor: add to ~/.cursor/mcp.json\n")
-		b.WriteString(jsonConfig("mcpServers", map[string]any{"command": bin}, env))
+		b.WriteString(jsonConfig("mcpServers", map[string]map[string]any{
+			"tenable-docs": local(), developerPortalName: {"url": developerPortal},
+		}, env))
+	case "devin-desktop":
+		fmt.Fprintf(&b, "# Devin Desktop (formerly Windsurf): add to %s\n", devinConfigPath())
+		b.WriteString(jsonConfig("mcpServers", map[string]map[string]any{
+			"tenable-docs": local(), developerPortalName: {"url": developerPortal},
+		}, env))
+	case "gemini":
+		b.WriteString("# Gemini CLI: add to ~/.gemini/settings.json\n")
+		b.WriteString(jsonConfig("mcpServers", map[string]map[string]any{
+			"tenable-docs": local(), developerPortalName: {"httpUrl": developerPortal},
+		}, env))
+	case "codex":
+		b.WriteString("# Codex: add to ~/.codex/config.toml\n")
+		fmt.Fprintf(&b, "[mcp_servers.tenable-docs]\ncommand = %s\n", tomlString(bin))
+		if len(env) > 0 {
+			b.WriteString("\n[mcp_servers.tenable-docs.env]\n")
+			for _, k := range sortedKeys(env) {
+				fmt.Fprintf(&b, "%s = %s\n", k, tomlString(env[k]))
+			}
+		}
+		fmt.Fprintf(&b, "\n[mcp_servers.%s]\nurl = %s\n", developerPortalName, tomlString(developerPortal))
 	}
 	return b.String()
 }
 
-// jsonConfig is a client's JSON settings for the server, with paths escaped as JSON
-// needs (a Windows path's backslashes doubled).
-func jsonConfig(key string, entry map[string]any, env map[string]string) string {
+// jsonConfig is a client's JSON settings for the servers, with the local server's env
+// and paths escaped as JSON needs (a Windows path's backslashes doubled).
+func jsonConfig(key string, servers map[string]map[string]any, env map[string]string) string {
 	if len(env) > 0 {
-		entry["env"] = env
+		servers["tenable-docs"]["env"] = env
 	}
-	data, _ := json.MarshalIndent(map[string]any{key: map[string]any{"tenable-docs": entry}}, "", "  ")
+	data, _ := json.MarshalIndent(map[string]any{key: servers}, "", "  ")
 	return string(data) + "\n"
+}
+
+// tomlString quotes a TOML string: a literal string, which needs no escapes (so a
+// Windows path keeps its backslashes as they are), unless it holds a quote or a
+// newline, which a basic string escapes as JSON does.
+func tomlString(s string) string {
+	if !strings.ContainsAny(s, "'\n") {
+		return "'" + s + "'"
+	}
+	q, _ := json.Marshal(s)
+	return string(q)
 }
 
 // desktopConfigPath is where Claude Desktop keeps its settings on this platform.
@@ -121,6 +168,14 @@ func desktopConfigPath() string {
 		return "~/Library/Application Support/Claude/claude_desktop_config.json"
 	}
 	return "~/.config/Claude/claude_desktop_config.json"
+}
+
+// devinConfigPath is where Devin Desktop keeps the user's MCP servers on this platform.
+func devinConfigPath() string {
+	if runtime.GOOS == "windows" {
+		return `%APPDATA%\devin\mcp_config.json`
+	}
+	return "~/.config/devin/mcp_config.json"
 }
 
 // shellQuote quotes a word for a POSIX shell, and for PowerShell and cmd when it has

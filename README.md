@@ -2,8 +2,6 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server that answers questions from Tenable's product documentation, with a link to the exact section that supports each answer. It covers [docs.tenable.com](https://docs.tenable.com) and its seven translated sites, in every product, guide, and published version, and it runs locally as a single Go binary with an embedded SQLite index.
 
-> **Status: in progress toward 1.0.** The tools, prompts, resources, and completions described here work, and the server downloads the prebuilt index from docs.tenable.com on first run and keeps it up to date. When the prebuilt index can't be reached, it reads the live sites instead. Until the first release, build from source with Go 1.26 or later; the other ways to install it, described below, start with 1.0. Where this README describes 1.0 behavior, it says so.
-
 For questions about Tenable's APIs, use the [Tenable Developer Portal MCP](https://developer.tenable.com/mcp), which developer.tenable.com hosts. The two are complementary: this server covers the product documentation, and that one covers the API reference.
 
 ## Contents
@@ -20,6 +18,7 @@ For questions about Tenable's APIs, use the [Tenable Developer Portal MCP](https
 - [Command line](#command-line)
 - [Privacy and security](#privacy-and-security)
 - [Search quality](#search-quality)
+- [Limitations](#limitations)
 - [Development](#development)
 - [License](#license)
 - [Disclaimer](#disclaimer)
@@ -35,6 +34,8 @@ Tenable Docs MCP indexes that structure and exposes it through MCP tools, so an 
 - answer narrow questions (a setting's default, a port, a required role) from the tables the docs already contain;
 - cite a stable link to the heading, and check every link before sending the answer;
 - say plainly when the docs don't cover something.
+
+[With and without the Tenable Docs MCP](docs/demo.md) shows the difference on four real questions: without it, an assistant answers from memory, and gets two of them wrong.
 
 ## Features
 
@@ -142,50 +143,26 @@ When `read_doc`, `outline`, or `related_pages` is given a docs page the index do
 
 ## Connect it to an MCP client
 
-The server speaks MCP over stdio by default, so a client runs it as a command with no arguments. Use the binary's full path. On Windows, use forward slashes in shell commands and doubled backslashes in JSON (`"C:\\tools\\tenable-docs-mcp.exe"`).
+The server speaks MCP over stdio, so a client runs it as a command. **[Connecting MCP clients](docs/clients.md)** has a guide for each client, each setting this server up beside the Tenable Developer Portal MCP:
 
-`tenable-docs-mcp config` prints the settings below for Claude Code, Claude Desktop, VS Code, and Cursor, with this binary's path already in them and quoted correctly for each; `-client` picks one, and `-index` adds an index folder. It only prints, and never edits a client's files. `tenable-docs-mcp doctor` checks that everything the server needs is in place.
+| Client | Where the settings go |
+| --- | --- |
+| [Claude Desktop](docs/clients.md#claude-desktop) | The `.mcpb` extension, or `claude_desktop_config.json` |
+| [Claude Code](docs/clients.md#claude-code) | `claude mcp add` |
+| [VS Code](docs/clients.md#vs-code) | `mcp.json` |
+| [Cursor](docs/clients.md#cursor) | `~/.cursor/mcp.json` |
+| [Devin Desktop (formerly Windsurf)](docs/clients.md#devin-desktop-formerly-windsurf) | `~/.config/devin/mcp_config.json` |
+| [Gemini CLI](docs/clients.md#gemini-cli) | `gemini mcp add`, or `~/.gemini/settings.json` |
+| [Codex](docs/clients.md#codex) | `~/.codex/config.toml` |
 
-### Claude Code
+`tenable-docs-mcp config` prints each client's settings with this binary's path already in them and quoted correctly; `-client` picks one, and `-index` adds an index folder. It only prints, and never edits a client's files. `tenable-docs-mcp doctor` checks that everything the server needs is in place.
+
+For example, in Claude Code:
 
 ```bash
 claude mcp add --scope user tenable-docs -- /path/to/tenable-docs-mcp
+claude mcp add --scope user --transport http tenable-developer https://developer.tenable.com/mcp
 ```
-
-Prompts appear as slash commands, such as `/mcp__tenable-docs__how-to`.
-
-### Claude Desktop
-
-In `claude_desktop_config.json` (Settings > Developer > Edit Config):
-
-```json
-{
-  "mcpServers": {
-    "tenable-docs": {
-      "command": "/path/to/tenable-docs-mcp"
-    }
-  }
-}
-```
-
-### VS Code
-
-In `.vscode/mcp.json` for a workspace, or in your user `mcp.json`:
-
-```json
-{
-  "servers": {
-    "tenable-docs": {
-      "type": "stdio",
-      "command": "/path/to/tenable-docs-mcp"
-    }
-  }
-}
-```
-
-### Cursor
-
-In `~/.cursor/mcp.json`, use the same `mcpServers` entry as Claude Desktop.
 
 ### Other clients
 
@@ -669,6 +646,17 @@ The specialized tools have their own sets in [`internal/tools/testdata`](interna
 - **Parser yield:** it reads one product's guide from each language's live site (Nessus in English and Japanese, and Identity Exposure on the other six sites, at most 400 pages each) and checks that at least 99% of the pages parse with content, to catch changes to the sites' markup. It fails too when more than 2% of a guide's pages can't be downloaded.
 
 Each run's summary shows the scores, and the results are kept for 90 days as artifacts: each set's scores and every question's rank as JSON, and each language's yield.
+
+## Limitations
+
+- **The product documentation only.** It answers from the pages on docs.tenable.com and the translated sites, not the API reference (use the Developer Portal MCP), knowledge-base articles, the community, or anything behind a login. PDFs aren't indexed, and neither is anything robots.txt keeps out, such as early-access guides.
+- **Keyword search, not embeddings.** Search is full-text, with stemming, synonyms, and product names, so a question in very different words from the docs can miss. The assistant can rephrase, and the companion skill tells it to try two or three times before saying the docs don't cover something.
+- **Up to a day behind the sites.** The prebuilt index is rebuilt after each docs deploy, and servers check for it once a day. Pages added since then are fetched on demand when the assistant asks for them by link.
+- **Translations are partial.** The translated sites cover some guides; for the rest, answers come from the English docs and say so.
+- **English tables for settings and requirements.** `find_setting` and `requirements` read English pages, because they recognize tables by their English column headings.
+- **Forms need a client that can show them.** Feedback and gap reports go through forms (MCP elicitation). In clients without forms, nothing is sent, and the assistant gives the user the page's link instead.
+- **Runs on your computer.** There's no hosted endpoint yet, and the HTTP transport listens only on this machine.
+- **Not a Tenable product.** It isn't supported by Tenable; see the [disclaimer](#disclaimer).
 
 ## Development
 
