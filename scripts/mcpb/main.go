@@ -73,7 +73,7 @@ func manifest(version string) (map[string]any, error) {
 		"long_description": "Searches docs.tenable.com and its seven translated sites, in every product, guide, and " +
 			"published version, from a local index that downloads on first run and updates daily. Answers how-to " +
 			"questions, settings, required roles, system requirements, and release notes, compares versions, and " +
-			"checks an answer's docs links. A community project; not an official Tenable product.",
+			"checks an answer's docs links.",
 		"author":        map[string]string{"name": "Lance Duvall", "url": "https://github.com/lanz"},
 		"repository":    map[string]string{"type": "git", "url": server.ProjectURL},
 		"homepage":      server.ProjectURL,
