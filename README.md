@@ -406,13 +406,13 @@ The server reads the file when it starts. If a line can't be read, the server sa
 | `ok` | The page is in the index, and its anchor is one of the page's headings | No |
 | `older_version` | The page is for an older version; `current_url` is the current one | No |
 | `translation` | The page is a translation; `english_url` is the current English page | No |
-| `anchor_unknown` | The anchor isn't a heading; it may be on a smaller element | No |
+| `anchor_unknown` | The anchor isn't a heading; it may be on a smaller element. When a heading's anchor matches in another case, the checker suggests it: browsers match anchors exactly | No |
 | `anchor_missing` | A live check found no element with that `id` or `name` | Yes |
 | `moved` | A live check found that the site redirects the link | No |
 | `not_found` | The page isn't in the index, or, with a live check, on the site | Yes |
 | `not_indexed` | The index has no docs for that language or version set | No |
 
-For a broken link, the checker suggests the current or English version of the page when the index has it, or else the best search result for the words of the file name (`InstallNessusLinux.htm` becomes "Install Nessus Linux"). With `check_live` (or `-live`), it fetches the live page to settle anchors that aren't headings and pages the index doesn't have yet.
+For a broken link, the checker suggests the current or English version of the page when the index has it, or else the best search result for the words of the file name (`InstallNessusLinux.htm` becomes "Install Nessus Linux"). With `check_live` (or `-live`), it fetches the live page to settle anchors that aren't headings and pages the index doesn't have yet: each page once, and at most 50 pages a call.
 
 For documentation writers, `verify-links` also checks draft topics: `-base` gives the draft's published URL, and a broken relative link whose target file exists beside the draft is noted as a topic in the source project that isn't published.
 

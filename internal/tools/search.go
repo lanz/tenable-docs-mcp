@@ -8,11 +8,24 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lanz/tenable-docs-mcp/internal/search"
 )
+
+// MaxQuery is the most characters a search argument takes: a question is far shorter,
+// and a long one costs a search time for every word.
+const MaxQuery = 1000
+
+// checkLength refuses a search argument longer than MaxQuery.
+func checkLength(name, v string) error {
+	if n := utf8.RuneCountInString(v); n > MaxQuery {
+		return fmt.Errorf("%s is %d characters; the limit is %d. Ask a shorter question", name, n, MaxQuery)
+	}
+	return nil
+}
 
 type searchIn struct {
 	Query     string `json:"query" jsonschema:"what to look for, in the user's words and language: a task, setting, message, or feature, with the product and version if known"`
@@ -71,6 +84,9 @@ func registerSearch(s *mcp.Server, env *Env) {
 			"Developer Portal MCP for API questions.",
 		Annotations: readOnly("Search the docs"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in searchIn) (*mcp.CallToolResult, searchOut, error) {
+		if err := checkLength("query", in.Query); err != nil {
+			return nil, searchOut{}, err
+		}
 		if err := env.ready(); err != nil {
 			return nil, searchOut{}, err
 		}

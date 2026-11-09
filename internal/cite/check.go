@@ -76,13 +76,47 @@ type Checker struct {
 	// Live, if set, is used to check anchors that aren't headings, and pages the index
 	// doesn't have.
 	Live site.Source
+
+	live *liveRun
+}
+
+// MaxLiveFetches is how many pages one Check fetches from the live site at most.
+const MaxLiveFetches = 50
+
+// liveRun is one Check's live fetches: each page is fetched once, and only so many.
+type liveRun struct {
+	pages map[string]liveResult
+	left  int
+}
+
+type liveResult struct {
+	resp *site.Response
+	err  error
+}
+
+// fetchLive fetches a page from the live site, once per Check.
+func (c *Checker) fetchLive(ctx context.Context, pageURL string) (*site.Response, error) {
+	if r, ok := c.live.pages[pageURL]; ok {
+		return r.resp, r.err
+	}
+	if c.live.left <= 0 {
+		return nil, fmt.Errorf("not checked: this call reached its limit of %d live pages", MaxLiveFetches)
+	}
+	c.live.left--
+	resp, err := c.Live.Fetch(ctx, site.Request{URL: pageURL})
+	if ctx.Err() == nil {
+		c.live.pages[pageURL] = liveResult{resp, err}
+	}
+	return resp, err
 }
 
 // Check checks each link.
 func (c *Checker) Check(ctx context.Context, links []Found) ([]Result, error) {
+	run := *c
+	run.live = &liveRun{pages: map[string]liveResult{}, left: MaxLiveFetches}
 	out := make([]Result, 0, len(links))
 	for _, f := range links {
-		r, err := c.check(ctx, f)
+		r, err := run.check(ctx, f)
 		if err != nil {
 			return nil, err
 		}
@@ -169,6 +203,13 @@ func (c *Checker) check(ctx context.Context, f Found) (Result, error) {
 	}
 	if anchor != "" && !hasAnchor(sections, anchor) {
 		r.Status, r.Note = AnchorUnknown, "the anchor isn't one of the page's headings"
+		// Browsers match anchors exactly, so a heading's anchor in another case is
+		// a broken link, with an easy fix.
+		if fixed := anchorFold(sections, anchor); fixed != "" {
+			r.Note = "the page's heading anchor is #" + fixed + "; anchors are case-sensitive"
+			r.Suggestion = &Suggestion{Title: info.Title, URL: pageURL + "#" + fixed}
+			return r, nil
+		}
 		if c.Live != nil {
 			found, err := c.liveAnchor(ctx, pageURL, anchor)
 			switch {
@@ -199,6 +240,16 @@ func (c *Checker) page(ctx context.Context, k index.Key, pageURL string) (*index
 	return info, sections, err
 }
 
+// anchorFold returns a heading's anchor that matches anchor in another case, or "".
+func anchorFold(sections []index.Section, anchor string) string {
+	for _, s := range sections {
+		if s.Anchor != "" && strings.EqualFold(s.Anchor, anchor) {
+			return s.Anchor
+		}
+	}
+	return ""
+}
+
 func hasAnchor(sections []index.Section, anchor string) bool {
 	for _, s := range sections {
 		if s.Anchor == anchor {
@@ -211,18 +262,19 @@ func hasAnchor(sections []index.Section, anchor string) bool {
 // liveAnchor reports whether the live page has an element with the anchor as its id or
 // name.
 func (c *Checker) liveAnchor(ctx context.Context, pageURL, anchor string) (bool, error) {
-	resp, err := c.Live.Fetch(ctx, site.Request{URL: pageURL})
+	resp, err := c.fetchLive(ctx, pageURL)
 	if err != nil {
 		return false, err
 	}
-	re := regexp.MustCompile(`(?i)\b(?:id|name)\s*=\s*["']` + regexp.QuoteMeta(anchor) + `["']`)
+	// The attribute's name in any case, its value exactly, as browsers match it.
+	re := regexp.MustCompile(`(?i:\b(?:id|name))\s*=\s*["']` + regexp.QuoteMeta(anchor) + `["']`)
 	return re.Match(resp.Body), nil
 }
 
 // liveMissing checks a page the index doesn't have on the live site. It returns true
 // when that settles the link: the page exists (the index is behind) or redirects.
 func (c *Checker) liveMissing(ctx context.Context, r *Result, pageURL string) (bool, error) {
-	resp, err := c.Live.Fetch(ctx, site.Request{URL: pageURL})
+	resp, err := c.fetchLive(ctx, pageURL)
 	switch {
 	case errors.Is(err, site.ErrNotFound):
 		r.Note = "not on the live site either"
