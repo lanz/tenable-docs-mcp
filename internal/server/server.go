@@ -32,9 +32,23 @@ Portal MCP (https://developer.tenable.com/mcp).
 Start with search_docs, passing the user's question in their words and language; read the best result with read_doc
 before answering, and cite the url it returns. For a translation or an older version, english_url is the current
 English page. State the product and version an answer is for, and any required role the docs give. Before sending an
-answer with docs links, check them with verify_citations. When the docs don't answer a question, say so, and offer to
-record it with report_gap, which also lets the user send it to Tenable if they choose. When the user asks to give Tenable feedback on a page, open_feedback_form shows them the
-docs feedback form; the feedback is theirs, and they write it. index_status shows what the documentation index holds.`
+answer with docs links, check them with verify_citations. When the docs don't answer a question, say so.`
+
+// localInstructions follow instructions on a server that runs on the user's computer,
+// which records gaps and sends feedback; a hosted server does neither.
+const localInstructions = ` Offer to
+record the question with report_gap, which also lets the user send it to Tenable if they choose. When the user asks to give Tenable feedback on a page, open_feedback_form shows them the
+docs feedback form; the feedback is theirs, and they write it.`
+
+// hostedInstructions follow instructions on a hosted server.
+const hostedInstructions = ` For feedback on a page, give the user its link: the docs site's
+own feedback form is at the bottom of every page.`
+
+const statusInstructions = ` index_status shows what the documentation index holds.`
+
+// hostedOff are the tools a hosted server leaves out: they write to the index or to
+// the user's computer, or send what a user writes.
+var hostedOff = []string{"refresh_index", "report_gap", "open_feedback_form"}
 
 // Options configure the server.
 type Options struct {
@@ -48,7 +62,7 @@ type Options struct {
 	// Feedback sends open_feedback_form's feedback; nil turns it off.
 	Feedback *feedback.Sender
 	// Hosted turns off what a shared server mustn't do: refresh_index, report_gap, and
-	// open_feedback_form.
+	// open_feedback_form are left out, and nothing is fetched from the live sites.
 	Hosted bool
 	// Updates keeps the index up to date from the published snapshot; nil means
 	// automatic updates are off. New connects it to the tools; run it afterward.
@@ -67,23 +81,33 @@ func New(opts Options) *mcp.Server {
 	if opts.Synonyms != nil && env.Engine != nil {
 		env.Engine.Synonyms = opts.Synonyms
 	}
-	env.Live = opts.Live
-	if !opts.Hosted {
+	env.Hosted = opts.Hosted
+	instr := instructions
+	if opts.Hosted {
+		instr += hostedInstructions + statusInstructions
+	} else {
+		env.Live = opts.Live
 		env.GapsFile, env.AllowRefresh, env.Feedback = opts.GapsFile, true, opts.Feedback
 		if opts.OnDemand != nil {
 			env.FetchPage = opts.OnDemand.Page
 		}
-	}
-	instr := instructions
-	if u, ok := env.UpdateAvailable(); ok {
-		instr += "\n\nTell the user, once: " + u.Message()
+		instr += localInstructions + statusInstructions
+		// The people who run a hosted server update it; its users can't.
+		if u, ok := env.UpdateAvailable(); ok {
+			instr += "\n\nTell the user, once: " + u.Message()
+		}
 	}
 	s := mcp.NewServer(
 		&mcp.Implementation{Name: Name, Title: "Tenable Docs MCP", Version: version.Get(), WebsiteURL: ProjectURL},
 		&mcp.ServerOptions{Instructions: instr, CompletionHandler: env.Complete},
 	)
-	s.AddReceivingMiddleware(env.UpdateNote())
+	if !opts.Hosted {
+		s.AddReceivingMiddleware(env.UpdateNote())
+	}
 	tools.Register(s, env)
+	if opts.Hosted {
+		s.RemoveTools(hostedOff...)
+	}
 	if w := opts.Updates; w != nil {
 		env.Updates = w.Status
 		w.OnChange = func() { tools.RegisterGuides(s, env) }

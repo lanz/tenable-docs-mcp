@@ -119,3 +119,18 @@ func TestLastErrorIsClipped(t *testing.T) {
 		t.Errorf("clipError = %d runes", len([]rune(long)))
 	}
 }
+
+// A hosted server checks more often than daily.
+func TestDueEvery(t *testing.T) {
+	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	st := State{CheckedAt: now.Add(-90 * time.Minute).Format(time.RFC3339)}
+	if Due(st, false, now) || DueEvery(st, false, now, 0) {
+		t.Error("due daily after 90 minutes")
+	}
+	if !DueEvery(st, false, now, time.Hour) {
+		t.Error("not due hourly after 90 minutes")
+	}
+	if DueEvery(State{CheckedAt: now.Add(-30 * time.Minute).Format(time.RFC3339)}, false, now, time.Hour) {
+		t.Error("due hourly after 30 minutes")
+	}
+}

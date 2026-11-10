@@ -48,6 +48,9 @@ type Env struct {
 	Updates func() published.Status
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// Hosted is set for a shared server, which leaves out the tools that write to the
+	// index or the user's computer, or send what a user writes.
+	Hosted bool
 
 	guidesMu  sync.Mutex
 	guideURIs map[string]bool // the toc resources registered
@@ -74,7 +77,7 @@ func Register(s *mcp.Server, env *Env) {
 	registerHonest(s, env)
 	registerFeedback(s, env)
 	registerResources(s, env)
-	registerPrompts(s)
+	registerPrompts(s, env)
 }
 
 var closedWorld = false

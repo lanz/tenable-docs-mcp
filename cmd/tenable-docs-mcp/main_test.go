@@ -66,3 +66,19 @@ func TestServeHTTPStopsOnCancel(t *testing.T) {
 		t.Errorf("serve -http after cancel: code %d, stderr %q", code, errOut.String())
 	}
 }
+
+// -hosted needs an address and its host names, and the hosted flags need -hosted.
+func TestServeHostedFlags(t *testing.T) {
+	for _, args := range [][]string{
+		{"serve", "-hosted"},
+		{"serve", "-hosted", "-http", ":8080"},
+		{"serve", "-hosted", "-allow-host", "docs.tenable.com"},
+		{"serve", "-hosted", "-http", ":8080", "-allow-host", " , "},
+		{"serve", "-allow-host", "docs.tenable.com"},
+		{"serve", "-client-ip-header", "CF-Connecting-IP", "-http", "127.0.0.1:8080"},
+	} {
+		if code, _, errOut := runCmd(args...); code != 2 || !strings.Contains(errOut, "-hosted") {
+			t.Errorf("%v: exit %d %q", args, code, errOut)
+		}
+	}
+}

@@ -17,10 +17,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -88,16 +90,43 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	fs := flag.NewFlagSet(server.Name+" serve", flag.ContinueOnError)
-	setUsage(fs, stderr, "serve [-http ADDR] [-index DIR]",
+	setUsage(fs, stderr, "serve [flags]",
 		"run the MCP server over stdio, as MCP clients start it, or with -http, over streamable HTTP on this computer",
-		"With no command at all, tenable-docs-mcp does the same as serve.")
-	httpAddr := fs.String("http", "", "serve streamable HTTP on this address (this machine only), instead of stdio")
+		"With no command at all, tenable-docs-mcp does the same as serve.",
+		"With -hosted, it's a server for everyone, behind a load balancer: it listens on any address, "+
+			"answers only for the -allow-host names, limits each client, and leaves out the tools that "+
+			"write or send. See the README's Hosted mode.")
+	httpAddr := fs.String("http", "", "serve streamable HTTP on this address (this machine only, unless -hosted), instead of stdio")
 	indexDir := fs.String("index", "", "the documentation index's folder (default: $TDM_INDEX_DIR, or the user's cache folder)")
+	hostedMode := fs.Bool("hosted", false, "run as a hosted server, for everyone; needs -http and -allow-host")
+	allowHosts := fs.String("allow-host", "", "with -hosted, the host names clients reach the server by, comma-separated, such as docs.tenable.com")
+	clientIP := fs.String("client-ip-header", "", "with -hosted, the header a trusted proxy gives the client's address in, such as CF-Connecting-IP")
+	ratePerMin := fs.Int("rate", 120, "with -hosted, the requests a minute each client may make")
+	maxInFlight := fs.Int("max-in-flight", 64, "with -hosted, the requests answered at once; more get 503")
 	if err := fs.Parse(args); err != nil {
 		return parseExit(err)
 	}
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "%s serve: unexpected argument %q\n", server.Name, fs.Arg(0))
+		return 2
+	}
+	if *hostedMode {
+		var hosts []string
+		for _, h := range strings.Split(*allowHosts, ",") {
+			if h = strings.TrimSpace(h); h != "" {
+				hosts = append(hosts, h)
+			}
+		}
+		if *httpAddr == "" || len(hosts) == 0 {
+			fmt.Fprintf(stderr, "%s serve: -hosted needs -http ADDR and -allow-host HOSTS\n", server.Name)
+			return 2
+		}
+		return serveHosted(ctx, *httpAddr, *indexDir, stderr, server.HostedOptions{
+			AllowHosts: hosts, ClientIPHeader: *clientIP, RatePerMinute: *ratePerMin, MaxInFlight: *maxInFlight,
+		})
+	}
+	if *allowHosts != "" || *clientIP != "" {
+		fmt.Fprintf(stderr, "%s serve: -allow-host and -client-ip-header are for -hosted\n", server.Name)
 		return 2
 	}
 	ix := openIndex(*indexDir, stderr)
@@ -140,7 +169,7 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	}
 	if *httpAddr == "" {
 		if stdinIsTerminal() && isTerminalWriter(stderr) {
-			launchScreen(stderr, ix, "")
+			launchScreen(stderr, ix, "", false)
 		}
 		if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) {
 			fmt.Fprintln(stderr, server.Name+":", err)
@@ -153,9 +182,54 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		return 2
 	}
 	if isTerminalWriter(stderr) {
-		launchScreen(stderr, ix, *httpAddr)
+		launchScreen(stderr, ix, *httpAddr, false)
 	}
-	return serveHTTP(ctx, server.NewHTTPServer(*httpAddr, server.HTTPHandler(srv)), stderr)
+	return serveHTTP(ctx, server.NewHTTPServer(*httpAddr, server.HTTPHandler(srv)), stderr, true)
+}
+
+// hostedCheckEvery is how often a hosted server checks for an updated index: the docs
+// are published more than once a day, and a check is one small request.
+const hostedCheckEvery = time.Hour
+
+// serveHosted runs a hosted server: for everyone, behind a load balancer. It answers
+// from the published index, checks it for updates hourly, and never fetches from the
+// live sites, records questions, or sends feedback. It logs a JSON line per request, and
+// what it does, to stderr.
+func serveHosted(ctx context.Context, addr, indexDir string, stderr io.Writer, o server.HostedOptions) int {
+	logger := slog.New(slog.NewJSONHandler(stderr, nil))
+	ix := openIndex(indexDir, stderr)
+	if ix == nil {
+		return 1
+	}
+	defer ix.Close()
+	opts := server.Options{Index: ix, Hosted: true, Synonyms: loadSynonyms(stderr)}
+	u, err := publishedUpdater(ix, os.Getenv("TDM_SITES"))
+	if err != nil {
+		fmt.Fprintln(stderr, server.Name+": TDM_INDEX_URL or TDM_SITES:", err)
+		return 2
+	}
+	if u != nil {
+		opts.Updates = &published.Watcher{Updater: u, Every: hostedCheckEvery, Log: func(msg string) { logger.Info(msg) }}
+	}
+	srv := server.New(opts)
+	if opts.Updates != nil {
+		go opts.Updates.Run(ctx)
+	}
+	o.Ready = func() bool { return len(ix.Keys()) > 0 }
+	o.Log = logger
+	h, err := server.HostedHandler(srv, o)
+	if err != nil {
+		fmt.Fprintln(stderr, server.Name+":", err)
+		return 2
+	}
+	hs := server.NewHTTPServer(addr, h)
+	// Responses are plain JSON, not streamed, so writes can have a deadline too.
+	hs.ReadTimeout, hs.WriteTimeout = 30*time.Second, 90*time.Second
+	if isTerminalWriter(stderr) {
+		launchScreen(stderr, ix, addr, true)
+	}
+	logger.Info("serving", "addr", addr, "hosts", strings.Join(o.AllowHosts, ","), "version", version.Get())
+	return serveHTTP(ctx, hs, stderr, false)
 }
 
 // help writes the full help, or a command's: help search is search -h.
@@ -234,10 +308,14 @@ func openIndex(dir string, stderr io.Writer) *index.Index {
 	return ix
 }
 
-func serveHTTP(ctx context.Context, hs *http.Server, stderr io.Writer) int {
+// serveHTTP serves until ctx is done. announce says where on stderr; a hosted server
+// logs that itself, as JSON.
+func serveHTTP(ctx context.Context, hs *http.Server, stderr io.Writer, announce bool) int {
 	errc := make(chan error, 1)
 	go func() { errc <- hs.ListenAndServe() }()
-	fmt.Fprintf(stderr, "%s: serving MCP at http://%s/mcp\n", server.Name, hs.Addr)
+	if announce {
+		fmt.Fprintf(stderr, "%s: serving MCP at http://%s/mcp\n", server.Name, hs.Addr)
+	}
 	select {
 	case err := <-errc:
 		fmt.Fprintln(stderr, server.Name+":", err)

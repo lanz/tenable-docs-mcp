@@ -16,6 +16,7 @@ For questions about Tenable's APIs, use the [Tenable Developer Portal MCP](https
 - [How a question becomes a cited answer](#how-a-question-becomes-a-cited-answer)
 - [The index and snapshot format](#the-index-and-snapshot-format)
 - [Command line](#command-line)
+- [Hosted mode](#hosted-mode)
 - [Privacy and security](#privacy-and-security)
 - [Search quality](#search-quality)
 - [Limitations](#limitations)
@@ -190,7 +191,7 @@ For a client on the same machine that prefers HTTP:
 tenable-docs-mcp serve -http 127.0.0.1:8080
 ```
 
-The server listens at `http://127.0.0.1:8080/mcp`, with a health check at `/healthz`. It accepts only loopback addresses (`127.0.0.1`, `::1`, or `localhost`) and refuses to start on any other; see [HTTP server hardening](#http-server-hardening). In Claude Code, for example:
+The server listens at `http://127.0.0.1:8080/mcp`, with a health check at `/healthz`. It accepts only loopback addresses (`127.0.0.1`, `::1`, or `localhost`) and refuses to start on any other, unless it's a [hosted server](#hosted-mode); see [HTTP server hardening](#http-server-hardening). In Claude Code, for example:
 
 ```bash
 claude mcp add --transport http tenable-docs http://127.0.0.1:8080/mcp
@@ -542,6 +543,7 @@ A command exits with 0 when the tool found something, 1 when it found nothing or
 | --- | --- |
 | `tenable-docs-mcp` | Serve MCP over stdio (what clients run). Run in a terminal, it also shows what it is and what to run instead, on stderr; an MCP client never sees that |
 | `tenable-docs-mcp serve [-http ADDR] [-index DIR]` | Serve over stdio, or over streamable HTTP on a loopback `ADDR`, from the index in `DIR` |
+| `tenable-docs-mcp serve -hosted -http ADDR -allow-host HOSTS [-client-ip-header NAME] [-rate N] [-max-in-flight N]` | Serve for everyone, behind a load balancer; see [Hosted mode](#hosted-mode) |
 | `tenable-docs-mcp doctor [-index DIR]` | Check that the index opens, with the current schema and a folder only you can read; that the docs sites and the prebuilt index (at `TDM_INDEX_URL`, when set) can be reached, saying so when a TLS-inspecting proxy is in the way; that your synonyms file reads; and that this program's path will work in client settings |
 | `tenable-docs-mcp config [-client NAME] [-index DIR]` | Print MCP client settings, ready to paste (see [Connect it to an MCP client](#connect-it-to-an-mcp-client)) |
 | `tenable-docs-mcp verify-links [-base URL] [-live] [-json] [-index DIR] FILE...` | Check the docs links in answers or drafts (`-` reads standard input) |
@@ -565,6 +567,50 @@ A command exits with 0 when the tool found something, 1 when it found nothing or
 The index folder is, in order: the `-index` flag, `$TDM_INDEX_DIR`, or `tenable-docs-mcp/index` in the user cache folder.
 
 `doctor` exits with 1 when a check fails. `verify-links` exits with 1 when any link is broken, and with 2 on a usage or input error. `index build` exits with 1 when any page fails. `index pull` exits with 1 when the download or the build fails. A failed download leaves the index as it was; when building a shard fails, the shards rebuilt before it are kept, and the next `index pull` rebuilds the rest.
+
+## Hosted mode
+
+`serve -hosted` runs the server for everyone, behind a load balancer, so users add a URL and install nothing:
+
+```bash
+tenable-docs-mcp serve -hosted -http :8080 -allow-host docs.tenable.com -client-ip-header CF-Connecting-IP
+```
+
+From the container image, the same arguments follow the image's name:
+
+```bash
+docker run --rm -p 8080:8080 --mount type=volume,src=tenable-docs-mcp,dst=/data \
+  ghcr.io/lanz/tenable-docs-mcp serve -hosted -http :8080 -allow-host docs.tenable.com
+```
+
+**How it differs from the local server:**
+
+- **Read-only.** It leaves out `refresh_index`, `report_gap`, and `open_feedback_form`, and never fetches from the live sites, so `verify_citations` checks links against the index only, and a page the index doesn't have isn't fetched. Its instructions and prompts say nothing about the tools it leaves out, and point users to each page's own feedback form.
+- **Stateless.** Each request stands alone, with no session, so any instance behind a load balancer can answer any request. Responses are plain JSON, not event streams, so proxies and CDNs need nothing special.
+- **Its own index, updated hourly.** Each instance keeps a copy of the prebuilt index in its index folder, downloads it on first start, and checks for an update every hour, swapping in what changed without downtime. With `TDM_INDEX_URL=off`, it serves an index built into the image instead.
+
+**Endpoints:**
+
+| Path | For | Answers |
+| --- | --- | --- |
+| `/mcp` | MCP clients | Only for the `-allow-host` names; 421 for any other host |
+| `/healthz` | Liveness checks | 200 while the process runs |
+| `/readyz` | The load balancer | 503 until the index is loaded, then 200 |
+| `/metrics` | Monitoring | Prometheus text: requests by method, tool, and status; their durations; requests in flight; readiness |
+
+Route only `/mcp` from the internet. The others skip the host check, since load balancers and monitors call them by address.
+
+**Limits,** each a flag:
+
+| Flag | Default | |
+| --- | --- | --- |
+| `-rate` | 120 | Requests a minute for each client, in bursts of up to a quarter of that; then 429, with `Retry-After` |
+| `-max-in-flight` | 64 | Requests answered at once; then 503, with `Retry-After` |
+| `-client-ip-header` | none | The header a trusted proxy gives the client's address in. Without it, the client is the connection's address, which behind a proxy is the proxy's. Set it only when every request comes through that proxy, since anyone can send the header |
+
+A request body is at most 1 MiB (413 past that), and a request takes at most a minute. Cross-origin requests from browsers are refused, as in the local server.
+
+**Logs:** one JSON line on stderr for each request, with its MCP method, tool, HTTP status, and duration, and lines for index updates. They never include what was asked, its arguments, or the client's address.
 
 ## Privacy and security
 
@@ -610,7 +656,7 @@ On Windows, permission bits don't apply; those folders are already private to th
 
 The optional HTTP transport is for clients on the same machine:
 
-- It listens only on loopback addresses and refuses to start on any other.
+- It listens only on loopback addresses and refuses to start on any other. A [hosted server](#hosted-mode) listens on any address, with its own safeguards.
 - Requests whose `Host` header isn't a loopback name are rejected, which blocks DNS rebinding.
 - Cross-origin browser requests are refused, so a web page can't drive a local server.
 - It sets a 10-second header read timeout, a 2-minute idle timeout, and a 64 KiB header limit. There's no write timeout, because streamed responses can stay open.
@@ -657,7 +703,7 @@ Each run's summary shows the scores, and the results are kept for 90 days as art
 - **Translations are partial.** The translated sites cover some guides; for the rest, answers come from the English docs and say so.
 - **English tables for settings and requirements.** `find_setting` and `requirements` read English pages, because they recognize tables by their English column headings.
 - **Forms need a client that can show them.** Feedback and gap reports go through forms (MCP elicitation). In clients without forms, nothing is sent, and the assistant gives the user the page's link instead.
-- **Runs on your computer.** There's no hosted endpoint yet, and the HTTP transport listens only on this machine.
+- **No public endpoint yet.** The server runs on your computer. It has a [hosted mode](#hosted-mode) for running it for everyone, but no public hosted server is running yet.
 - **Not a Tenable product.** It isn't supported by Tenable; see the [disclaimer](#disclaimer).
 
 ## Development

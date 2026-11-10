@@ -213,6 +213,7 @@ var placeholders = map[string]string{
 	"base": "URL", "url": "URL", "client": "NAME", "http": "ADDR", "source": "DIRS",
 	"guide-names": "FILE", "guide": "GUIDE", "product": "PRODUCT", "version": "VERSION",
 	"from-version": "VERSION", "to-version": "VERSION", "language": "LANG",
+	"allow-host": "HOSTS", "client-ip-header": "HEADER",
 }
 
 // placeholder is what a flag's value is called in the help: DIR for -index, N for a
