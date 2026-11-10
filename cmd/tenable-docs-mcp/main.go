@@ -5,29 +5,8 @@
 // Command tenable-docs-mcp is an MCP server that answers questions from Tenable's product
 // documentation, with links to the exact section.
 //
-// Usage:
-//
-//	tenable-docs-mcp                       serve MCP over stdio (what MCP clients run)
-//	tenable-docs-mcp serve [-http ADDR] [-index DIR]
-//	                                       serve over stdio, or over streamable HTTP on
-//	                                       ADDR (this machine only, e.g. 127.0.0.1:8080),
-//	                                       from the index in DIR
-//	tenable-docs-mcp verify-links [-base URL] [-live] FILE...
-//	                                       check the docs links in answers or draft topics
-//	tenable-docs-mcp search|read|outline|browse|related|products|setting|role|
-//	                 requirements|release-notes|term|compare|changes|status
-//	                                       run a tool from a terminal
-//	tenable-docs-mcp doctor                check the index, the network, and the setup
-//	tenable-docs-mcp config                print settings for MCP clients
-//	tenable-docs-mcp gaps export|submit|clear
-//	                                       summarize, send, or clear the questions
-//	                                       report_gap recorded
-//	tenable-docs-mcp index pull|crawl|build|import|verify
-//	                                       download or update the published index, or
-//	                                       build or update it from the live sites; build
-//	                                       the index, or a snapshot of it, from local
-//	                                       copies of the sites; import or check a snapshot
-//	tenable-docs-mcp version               print the version
+// Run with no arguments, it's the MCP server over stdio, as MCP clients start it; run
+// with a command, it's a command-line tool. `tenable-docs-mcp help` lists the commands.
 //
 // Over stdio, stdout carries only protocol messages; diagnostics go to stderr.
 package main
@@ -57,67 +36,6 @@ import (
 	"github.com/lanz/tenable-docs-mcp/internal/site"
 	"github.com/lanz/tenable-docs-mcp/internal/version"
 )
-
-const usage = `Usage:
-  tenable-docs-mcp                       serve MCP over stdio (what MCP clients run)
-  tenable-docs-mcp serve [-http ADDR] [-index DIR]
-                                         serve over stdio, or over streamable HTTP on ADDR
-                                         (this machine only, for example 127.0.0.1:8080),
-                                         from the documentation index in DIR (default:
-                                         $TDM_INDEX_DIR, or tenable-docs-mcp/index in the
-                                         user's cache folder)
-
-The tools, from a terminal (each takes -index DIR, and -json for the tool's
-structured output; -h lists a command's flags; exits 1 when nothing is found):
-  tenable-docs-mcp search QUESTION       search the docs, as search_docs does
-  tenable-docs-mcp read URL              read a section or page, as read_doc does
-  tenable-docs-mcp outline URL           a page's headings, or with -guide a guide's pages
-  tenable-docs-mcp browse GUIDE          a guide's table of contents, as browse_guide does
-  tenable-docs-mcp related URL           the pages around a page, as related_pages does
-  tenable-docs-mcp products              the products and languages in the index
-  tenable-docs-mcp setting SETTING       explain a setting, as find_setting does
-  tenable-docs-mcp role TASK             the role a task needs, as required_role does
-  tenable-docs-mcp requirements QUESTION system requirements, ports, and the like
-  tenable-docs-mcp release-notes [WORDS] release-note entries, newest first
-  tenable-docs-mcp term TERM             define a term or product name, as define_term does
-  tenable-docs-mcp compare URL -from-version V [-to-version V]
-                                         compare a page, or with -setting a setting, between
-                                         two versions, as compare_versions does
-  tenable-docs-mcp changes SINCE         the pages changed since a date (2026-10-01, or 30d),
-                                         as whats_changed does
-  tenable-docs-mcp status                the version and what the index holds; exits 1 if
-                                         the index isn't ready
-
-Checks, setup, and recorded questions:
-  tenable-docs-mcp doctor [-index DIR]   check the index, the network, and this program's
-                                         path; exits 1 if a check fails
-  tenable-docs-mcp config [-client NAME] [-index DIR]
-                                         print settings for Claude Code, Claude Desktop,
-                                         VS Code, and Cursor, ready to paste
-  tenable-docs-mcp verify-links [-base URL] [-live] [-json] FILE...
-                                         check the docs links in answers or draft topics
-                                         (- reads standard input); exits 1 if any is broken
-  tenable-docs-mcp gaps export [-since DATE] [-json]
-                                         summarize the questions the docs didn't answer
-  tenable-docs-mcp gaps submit [-since DATE]
-                                         send recorded questions to Tenable's documentation
-                                         team, asking about each one first
-  tenable-docs-mcp gaps clear -yes       delete the recorded questions
-
-The index:
-  tenable-docs-mcp index build -source "en=DIR;jp=DIR" [-sites en,jp] [-out DIR | -index DIR]
-                                         build the index, or a snapshot of it, from local
-                                         copies of the sites
-  tenable-docs-mcp index pull [-sites en,jp] [-index DIR]
-                                         download the published index, or update it
-  tenable-docs-mcp index crawl [-sites en,jp] [-index DIR]
-                                         build or update the index from the live sites
-  tenable-docs-mcp index import [-sites en,jp] [-index DIR] SNAPSHOT
-                                         build the index from a snapshot
-  tenable-docs-mcp index verify SNAPSHOT check a snapshot against its manifest
-  tenable-docs-mcp version               print the version
-  tenable-docs-mcp help                  show this help
-`
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -154,8 +72,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	case "help":
-		fmt.Fprint(stdout, usage)
-		return 0
+		return help(ctx, rest, stdout, stderr)
 	case "doctor":
 		return doctor(ctx, rest, stdout, stderr)
 	case "config":
@@ -164,18 +81,20 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		if c, ok := findToolCommand(cmd); ok {
 			return runTool(ctx, c, rest, stdout, stderr)
 		}
-		fmt.Fprintf(stderr, "%s: unknown command %q\n\n%s", server.Name, cmd, usage)
+		unknownCommand(stderr, server.Name, cmd, commandNames())
 		return 2
 	}
 }
 
 func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	fs := flag.NewFlagSet(server.Name+" serve", flag.ContinueOnError)
-	fs.SetOutput(stderr)
+	setUsage(fs, stderr, "serve [-http ADDR] [-index DIR]",
+		"run the MCP server over stdio, as MCP clients start it, or with -http, over streamable HTTP on this computer",
+		"With no command at all, tenable-docs-mcp does the same as serve.")
 	httpAddr := fs.String("http", "", "serve streamable HTTP on this address (this machine only), instead of stdio")
 	indexDir := fs.String("index", "", "the documentation index's folder (default: $TDM_INDEX_DIR, or the user's cache folder)")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "%s serve: unexpected argument %q\n", server.Name, fs.Arg(0))
@@ -220,6 +139,9 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		go opts.Updates.Run(ctx)
 	}
 	if *httpAddr == "" {
+		if stdinIsTerminal() && isTerminalWriter(stderr) {
+			launchScreen(stderr, ix, "")
+		}
 		if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil && !errors.Is(err, context.Canceled) {
 			fmt.Fprintln(stderr, server.Name+":", err)
 			return 1
@@ -230,7 +152,34 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		fmt.Fprintln(stderr, server.Name+":", err)
 		return 2
 	}
+	if isTerminalWriter(stderr) {
+		launchScreen(stderr, ix, *httpAddr)
+	}
 	return serveHTTP(ctx, server.NewHTTPServer(*httpAddr, server.HTTPHandler(srv)), stderr)
+}
+
+// help writes the full help, or a command's: help search is search -h.
+func help(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	switch {
+	case len(args) == 0:
+		writeHelp(stdout)
+		return 0
+	case len(args) == 1 && args[0] == "gaps":
+		writeGroupHelp(stdout, "gaps", "Summarize, send, or clear the questions report_gap recorded", gapsRows)
+		return 0
+	case len(args) == 1 && args[0] == "index":
+		writeGroupHelp(stdout, "index", "Download, build, update, or check the documentation index", indexRows)
+		return 0
+	case args[0] == "help":
+		return help(ctx, args[1:], stdout, stderr)
+	}
+	return run(ctx, append(args, "-h"), stdout, stderr)
+}
+
+// isTerminalWriter reports whether w is a terminal.
+func isTerminalWriter(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	return ok && isTerminal(f)
 }
 
 // synonymsPath returns the user's synonyms file: $TDM_SYNONYMS, or synonyms.txt in the

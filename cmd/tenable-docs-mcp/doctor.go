@@ -44,13 +44,13 @@ var publicCAs = []string{"Google Trust Services", "Let's Encrypt", "DigiCert", "
 // check fails.
 func doctor(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet(server.Name+" doctor", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	dir := fs.String("index", "", "the index folder (default: $TDM_INDEX_DIR, or the user's cache folder)")
+	setUsage(fs, stderr, "doctor [-index DIR]", "check the index, the network, and this program's path, and say what to fix. It exits with 1 when a check fails")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "Usage: %s doctor [-index DIR]\n", server.Name)
+		fs.Usage()
 		return 2
 	}
 	failed := false

@@ -140,6 +140,7 @@ When `read_doc`, `outline`, or `related_pages` is given a docs page the index do
 | `TDM_CRAWL` | `off` turns off reading the live sites when the prebuilt index can't be reached, and fetching new pages on demand. The default is `on`. |
 | `TDM_SITES` | Only download or read these sites, such as `en,jp` (default: all eight). `-sites` on `index pull` and `index crawl` does the same for one run. |
 | `TDM_SYNONYMS` | The file of your own synonyms, instead of `synonyms.txt` in the settings folder (see [Synonyms](#synonyms)). |
+| `NO_COLOR` | Any value turns off color in the help and the launch screen. Color is used only in a terminal, and never when `TERM` is `dumb`. |
 
 ## Connect it to an MCP client
 
@@ -539,7 +540,7 @@ A command exits with 0 when the tool found something, 1 when it found nothing or
 
 | Command | What it does |
 | --- | --- |
-| `tenable-docs-mcp` | Serve MCP over stdio (what clients run) |
+| `tenable-docs-mcp` | Serve MCP over stdio (what clients run). Run in a terminal, it also shows what it is and what to run instead, on stderr; an MCP client never sees that |
 | `tenable-docs-mcp serve [-http ADDR] [-index DIR]` | Serve over stdio, or over streamable HTTP on a loopback `ADDR`, from the index in `DIR` |
 | `tenable-docs-mcp doctor [-index DIR]` | Check that the index opens, with the current schema and a folder only you can read; that the docs sites and the prebuilt index (at `TDM_INDEX_URL`, when set) can be reached, saying so when a TLS-inspecting proxy is in the way; that your synonyms file reads; and that this program's path will work in client settings |
 | `tenable-docs-mcp config [-client NAME] [-index DIR]` | Print MCP client settings, ready to paste (see [Connect it to an MCP client](#connect-it-to-an-mcp-client)) |
@@ -555,7 +556,7 @@ A command exits with 0 when the tool found something, 1 when it found nothing or
 | `tenable-docs-mcp index llms -out DIR [-sites en,jp] [-index DIR]` | Write each site's [llms.txt](https://llmstxt.org), listing its guides by product with their first pages and descriptions, into `DIR/SITE/llms.txt` |
 | `tenable-docs-mcp index build -source SITES [-sites en,jp] [-guide-names FILE] [-out DIR \| -index DIR] [-json]` | Build a snapshot (`-out`) or an index (`-index`) from local copies of the sites |
 | `tenable-docs-mcp version` | Print the version |
-| `tenable-docs-mcp help` | Show usage |
+| `tenable-docs-mcp help [COMMAND]` | Show every command, or one command's flags (as `COMMAND -h` does) |
 
 `-source` takes `code=folder` pairs separated by semicolons, such as `"en=/data/en;jp=/data/jp"`, on every platform. On Linux and macOS, colons work too. `TDM_SITE_DIRS` uses the same format.
 

@@ -24,17 +24,14 @@ import (
 // verify_citations does. It exits 1 when a link is broken.
 func verifyLinks(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet(server.Name+" verify-links", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	base := fs.String("base", "", "the page's published URL, to resolve relative links (a draft topic's own URL)")
 	live := fs.Bool("live", false, "also check the live docs sites, for anchors that aren't headings and pages the index doesn't have")
 	indexDir := fs.String("index", "", "the documentation index's folder (default: $TDM_INDEX_DIR, or the user's cache folder)")
 	asJSON := fs.Bool("json", false, "write the results as JSON")
-	fs.Usage = func() {
-		fmt.Fprintf(stderr, "Usage: %s verify-links [-base URL] [-live] [-json] [-index DIR] FILE... (- for standard input)\n", server.Name)
-		fs.PrintDefaults()
-	}
+	setUsage(fs, stderr, "verify-links [-base URL] [-live] [-json] [-index DIR] FILE...",
+		"check the docs links in answers or draft topics, as verify_citations does. A FILE of - reads standard input. It exits with 1 when a link is broken")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	if fs.NArg() == 0 {
 		fs.Usage()
@@ -103,25 +100,38 @@ func verifyLinks(ctx context.Context, args []string, stdin io.Reader, stdout, st
 	return 0
 }
 
+// gapsUsage is each gaps command's usage line and what it does.
+var gapsUsage = map[string][2]string{
+	"export": {"gaps export [-since YYYY-MM-DD] [-json] [-file FILE]", "summarize the questions the docs didn't answer, which report_gap recorded, as Markdown or JSON"},
+	"clear":  {"gaps clear -yes [-file FILE]", "delete the recorded questions"},
+	"path":   {"gaps path [-file FILE]", "print where the questions are recorded"},
+}
+
 // gapsCmd summarizes or clears the questions report_gap recorded.
 func gapsCmd(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "submit" {
 		return gapsSubmit(context.Background(), args[1:], stdin, stdout, stderr)
 	}
-	if len(args) == 0 || (args[0] != "export" && args[0] != "clear" && args[0] != "path") {
-		fmt.Fprintf(stderr, "Usage:\n  %s gaps export [-since YYYY-MM-DD] [-json] [-file FILE]\n  %s gaps submit [-since YYYY-MM-DD] [-file FILE]\n  %s gaps clear -yes [-file FILE]\n  %s gaps path\n",
-			server.Name, server.Name, server.Name, server.Name)
+	switch {
+	case len(args) == 0:
+		writeGroupHelp(stderr, "gaps", "Summarize, send, or clear the questions report_gap recorded", gapsRows)
+		return 2
+	case args[0] == "-h" || args[0] == "-help" || args[0] == "--help" || args[0] == "help":
+		writeGroupHelp(stdout, "gaps", "Summarize, send, or clear the questions report_gap recorded", gapsRows)
+		return 0
+	case args[0] != "export" && args[0] != "clear" && args[0] != "path":
+		unknownCommand(stderr, server.Name+" gaps", args[0], []string{"export", "submit", "clear", "path"})
 		return 2
 	}
 	sub := args[0]
 	fs := flag.NewFlagSet(server.Name+" gaps "+sub, flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	file := fs.String("file", "", "the gaps file (default: tenable-docs-mcp/gaps.jsonl in the user's settings folder)")
 	since := fs.String("since", "", "only questions recorded on or after this date (YYYY-MM-DD)")
 	asJSON := fs.Bool("json", false, "write the summary as JSON instead of Markdown")
 	yes := fs.Bool("yes", false, "confirm clearing the recorded questions")
+	setUsage(fs, stderr, gapsUsage[sub][0], gapsUsage[sub][1])
 	if err := fs.Parse(args[1:]); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	path := *file
 	if path == "" {
