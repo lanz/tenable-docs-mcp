@@ -52,7 +52,11 @@ func (a args) scope() string {
 // The steps every answer ends with.
 const answerRules = " Cite the docs links you used, and check them with verify_citations before answering. " +
 	"Say which product and version your answer is for. If the docs don't cover something, say so rather than " +
-	"answering from memory, and offer to record it with report_gap."
+	"answering from memory" + gapRule + "."
+
+// gapRule ends answerRules where report_gap is available, which a hosted server leaves
+// out.
+const gapRule = ", and offer to record it with report_gap"
 
 var prompts = []prompt{
 	{
@@ -152,7 +156,7 @@ var prompts = []prompt{
 	},
 }
 
-func registerPrompts(s *mcp.Server) {
+func registerPrompts(s *mcp.Server, env *Env) {
 	for _, p := range prompts {
 		s.AddPrompt(&p.Prompt, func(ctx context.Context, req *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 			a := args{}
@@ -164,9 +168,13 @@ func registerPrompts(s *mcp.Server) {
 					return nil, fmt.Errorf("the %s prompt needs %s", p.Name, arg.Name)
 				}
 			}
+			text := p.text(a)
+			if env.Hosted {
+				text = strings.Replace(text, gapRule, "", 1)
+			}
 			return &mcp.GetPromptResult{
 				Description: p.Description,
-				Messages:    []*mcp.PromptMessage{{Role: "user", Content: &mcp.TextContent{Text: p.text(a)}}},
+				Messages:    []*mcp.PromptMessage{{Role: "user", Content: &mcp.TextContent{Text: text}}},
 			}, nil
 		})
 	}

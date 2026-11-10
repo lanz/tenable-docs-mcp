@@ -32,6 +32,13 @@ type verifyIn struct {
 	CheckLive bool   `json:"check_live,omitempty" jsonschema:"also check the live docs sites, for anchors that aren't headings and pages the index doesn't have"`
 }
 
+// verifyHostedIn is verify_citations' input on a hosted server, which never reads the
+// live sites, so it doesn't offer check_live.
+type verifyHostedIn struct {
+	Text    string `json:"text" jsonschema:"the answer or draft to check, in Markdown, HTML, or plain text"`
+	BaseURL string `json:"base_url,omitempty" jsonschema:"the page the text will be published as, to resolve relative links (for a draft topic)"`
+}
+
 type checkedLink struct {
 	URL        string `json:"url"`
 	Raw        string `json:"written_as,omitempty" jsonschema:"the link as written in the text"`
@@ -192,19 +199,32 @@ func joinInts(ns []int) string {
 
 func registerHonest(s *mcp.Server, env *Env) {
 	open := true
-	mcp.AddTool(s, &mcp.Tool{
+	verifyTool := &mcp.Tool{
 		Name: "verify_citations",
 		Description: "Check the docs links in an answer or a draft before relying on it: that each page exists and its " +
 			"anchor is on the page, which links go to older versions or translations (with the current English page " +
 			"to cite instead), and suggestions for broken links. Run it on an answer before sending it.",
 		Annotations: &mcp.ToolAnnotations{Title: "Verify citations", ReadOnlyHint: true, IdempotentHint: true, OpenWorldHint: &open},
-	}, func(ctx context.Context, req *mcp.CallToolRequest, in verifyIn) (*mcp.CallToolResult, verifyOut, error) {
-		out, err := CheckLinks(ctx, env, in.Text, in.BaseURL, in.CheckLive)
-		if err != nil {
-			return nil, verifyOut{}, err
-		}
-		return summary("%s", VerifySummary(out)), out, nil
-	})
+	}
+	if env.Hosted {
+		closed := false
+		verifyTool.Annotations.OpenWorldHint = &closed
+		mcp.AddTool(s, verifyTool, func(ctx context.Context, req *mcp.CallToolRequest, in verifyHostedIn) (*mcp.CallToolResult, verifyOut, error) {
+			out, err := CheckLinks(ctx, env, in.Text, in.BaseURL, false)
+			if err != nil {
+				return nil, verifyOut{}, err
+			}
+			return summary("%s", VerifySummary(out)), out, nil
+		})
+	} else {
+		mcp.AddTool(s, verifyTool, func(ctx context.Context, req *mcp.CallToolRequest, in verifyIn) (*mcp.CallToolResult, verifyOut, error) {
+			out, err := CheckLinks(ctx, env, in.Text, in.BaseURL, in.CheckLive)
+			if err != nil {
+				return nil, verifyOut{}, err
+			}
+			return summary("%s", VerifySummary(out)), out, nil
+		})
+	}
 
 	notDestructive := false
 	mcp.AddTool(s, &mcp.Tool{

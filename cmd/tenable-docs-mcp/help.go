@@ -157,7 +157,7 @@ var stdinIsTerminal = func() bool { return isTerminal(os.Stdin) }
 
 // launchScreen tells someone who started the server by hand what it is and what to run
 // instead, on stderr. stdout carries only the protocol, so nothing goes there.
-func launchScreen(w io.Writer, ix *index.Index, httpAddr string) {
+func launchScreen(w io.Writer, ix *index.Index, httpAddr string, hosted bool) {
 	s := styleFor(w)
 	header(w, s, true)
 	fmt.Fprintln(w)
@@ -170,7 +170,10 @@ func launchScreen(w io.Writer, ix *index.Index, httpAddr string) {
 		fmt.Fprintf(w, "%s  %s %s\n", s.bold("Index"), ix.Dir, s.dim(fmt.Sprintf("(%d shards)", len(ix.Keys()))))
 	}
 	fmt.Fprintln(w)
-	if httpAddr != "" {
+	if hosted {
+		writeText(w, "Serving MCP for everyone at "+s.bold("http://"+httpAddr+"/mcp")+", as a hosted server, behind your "+
+			"load balancer. Health: /healthz; ready once the index is loaded: /readyz; metrics: /metrics. Press Ctrl+C to stop.")
+	} else if httpAddr != "" {
 		writeText(w, "Serving MCP at "+s.bold("http://"+httpAddr+"/mcp")+" for MCP clients on this computer. Press Ctrl+C to stop.")
 	} else {
 		writeText(w, "This is an MCP server: your MCP client starts it, and talks to it over stdin and "+

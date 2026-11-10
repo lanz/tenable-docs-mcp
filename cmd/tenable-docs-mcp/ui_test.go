@@ -109,7 +109,7 @@ func TestLaunchScreen(t *testing.T) {
 	}
 	defer ix.Close()
 	var b bytes.Buffer
-	launchScreen(&b, ix, "")
+	launchScreen(&b, ix, "", false)
 	out := b.String()
 	for _, want := range []string{wordmark[0], tagline, "downloading now", "It's running now, waiting for one", "tenable-docs-mcp config"} {
 		if !strings.Contains(out, want) {
@@ -127,7 +127,7 @@ func TestLaunchScreen(t *testing.T) {
 		t.Errorf("lines wider than %d:\n%s", width, strings.Join(wide, "\n"))
 	}
 	b.Reset()
-	launchScreen(&b, ix, "127.0.0.1:8080")
+	launchScreen(&b, ix, "127.0.0.1:8080", false)
 	if !strings.Contains(b.String(), "http://127.0.0.1:8080/mcp") {
 		t.Errorf("HTTP:\n%s", b.String())
 	}

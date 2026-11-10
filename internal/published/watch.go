@@ -38,6 +38,10 @@ type Watcher struct {
 	// Crawler, when set, keeps the index up to date from the live sites while the
 	// published snapshot can't be reached; nil turns that fallback off.
 	Crawler *crawl.Crawler
+	// Every is how often the snapshot is checked for an update; zero means
+	// CheckEvery. A hosted server checks more often, since the docs are published more
+	// than once a day.
+	Every time.Duration
 
 	mu       sync.Mutex
 	updating bool
@@ -89,7 +93,7 @@ func (w *Watcher) Tick(ctx context.Context) {
 		w.changed()
 	}
 	st, _ := ReadState(u.Index.Dir)
-	if !Due(st, len(u.Index.Keys()) == 0, u.now()) {
+	if !DueEvery(st, len(u.Index.Keys()) == 0, u.now(), w.Every) {
 		return
 	}
 	w.begin("Checking for an updated index")
@@ -207,7 +211,13 @@ func (w *Watcher) changed() {
 
 // Due reports whether a check is due: CheckEvery after the last one succeeded, and
 // RetryAfter (or RetryEmptyAfter, for an empty index) after one failed.
-func Due(st State, empty bool, now time.Time) bool {
+func Due(st State, empty bool, now time.Time) bool { return DueEvery(st, empty, now, 0) }
+
+// DueEvery is Due, with checks every instead of CheckEvery (zero means CheckEvery).
+func DueEvery(st State, empty bool, now time.Time, every time.Duration) bool {
+	if every <= 0 {
+		every = CheckEvery
+	}
 	if st.ErrorAt != "" {
 		if t, err := time.Parse(time.RFC3339, st.ErrorAt); err == nil {
 			wait := RetryAfter
@@ -223,5 +233,5 @@ func Due(st State, empty bool, now time.Time) bool {
 		return true
 	}
 	t, err := time.Parse(time.RFC3339, st.CheckedAt)
-	return err != nil || now.Sub(t) >= CheckEvery
+	return err != nil || now.Sub(t) >= every
 }
