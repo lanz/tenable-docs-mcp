@@ -109,6 +109,9 @@ func (e *Env) status(ctx context.Context) (statusOut, string, error) {
 			}
 		}
 	}
+	if e.Hosted {
+		return e.hostedStatus(out), hostedStatusText(e.hostedStatus(out)), nil
+	}
 	if e.Updates != nil {
 		st := e.Updates()
 		out.Updates = updatesState{On: true, Source: st.URL, Updating: st.Updating, Step: st.Step, CheckedAt: st.CheckedAt,
@@ -170,4 +173,38 @@ func (e *Env) status(ctx context.Context) (statusOut, string, error) {
 		b.WriteString("\n" + out.Update.Message())
 	}
 	return out, b.String(), nil
+}
+
+// hostedStatus is the status a hosted server reports: what the index holds and when it
+// was last updated, for anyone who connects. It leaves out the server's own details (its
+// folder, where it downloads from, and errors), and anything about updating the server,
+// which its users don't run.
+func (e *Env) hostedStatus(out statusOut) statusOut {
+	out.Index.Folder = ""
+	if e.Updates != nil {
+		st := e.Updates()
+		out.Updates = updatesState{On: true, Updating: st.Updating, CheckedAt: st.CheckedAt, SnapshotBuiltAt: st.BuiltAt}
+	}
+	if len(out.Index.Shards) > 0 {
+		out.Index.State = "ready"
+	} else {
+		out.Index.State = "loading"
+		out.Note = "The documentation index is still loading; try again in a minute."
+	}
+	return out
+}
+
+func hostedStatusText(out statusOut) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s %s (hosted); index %s.", out.Server, out.Version, out.Index.State)
+	for _, sh := range out.Index.Shards {
+		fmt.Fprintf(&b, "\n- %s: %d pages, %d sections, last indexed %s", sh.Shard, sh.Pages, sh.Sections, sh.LastIndexed)
+	}
+	if u := out.Updates; u.CheckedAt != "" {
+		fmt.Fprintf(&b, "\nThe index is updated from the published docs every hour; last checked %s, built %s.", u.CheckedAt, u.SnapshotBuiltAt)
+	}
+	if out.Note != "" {
+		b.WriteString("\n" + out.Note)
+	}
+	return b.String()
 }

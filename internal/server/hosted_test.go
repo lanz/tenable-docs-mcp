@@ -212,7 +212,7 @@ func TestHostedLogsAndMetrics(t *testing.T) {
 	resp.Body.Close()
 	m := string(b)
 	if !strings.Contains(m, `tdm_requests_total{method="tools/call",tool="search_docs",status="200"} 1`) ||
-		!strings.Contains(m, `tool="bad___name__"`) || !strings.Contains(m, "tdm_ready 1") || strings.Contains(m, "acme") {
+		!strings.Contains(m, `method="tools/call",tool="other"`) || strings.Contains(m, "bad") || !strings.Contains(m, "tdm_ready 1") || strings.Contains(m, "acme") {
 		t.Errorf("metrics:\n%s", m)
 	}
 }

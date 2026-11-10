@@ -585,8 +585,8 @@ docker run --rm -p 8080:8080 --mount type=volume,src=tenable-docs-mcp,dst=/data 
 
 **How it differs from the local server:**
 
-- **Read-only.** It leaves out `refresh_index`, `report_gap`, and `open_feedback_form`, and never fetches from the live sites, so `verify_citations` checks links against the index only, and a page the index doesn't have isn't fetched. Its instructions and prompts say nothing about the tools it leaves out, and point users to each page's own feedback form.
-- **Stateless.** Each request stands alone, with no session, so any instance behind a load balancer can answer any request. Responses are plain JSON, not event streams, so proxies and CDNs need nothing special.
+- **Read-only.** It leaves out `refresh_index`, `report_gap`, and `open_feedback_form`, and never fetches from the live sites, so `verify_citations` checks links against the index only (it doesn't offer `check_live`), and a page the index doesn't have isn't fetched. `index_status` reports what the index holds and when it was updated, without the server's folder, download address, or errors. Its instructions and prompts say nothing about the tools it leaves out, and point users to each page's own feedback form.
+- **Stateless.** Each request stands alone, with no session, so any instance behind a load balancer can answer any request. Responses are plain JSON, not event streams, so proxies and CDNs need nothing special. `subscriptions/listen`, which holds a stream open for change notifications, is refused with a JSON-RPC error: notifications mean little across stateless instances, and the tools and resources don't change while the server runs.
 - **Its own index, updated hourly.** Each instance keeps a copy of the prebuilt index in its index folder, downloads it on first start, and checks for an update every hour, swapping in what changed without downtime. With `TDM_INDEX_URL=off`, it serves an index built into the image instead.
 
 **Endpoints:**
@@ -595,8 +595,8 @@ docker run --rm -p 8080:8080 --mount type=volume,src=tenable-docs-mcp,dst=/data 
 | --- | --- | --- |
 | `/mcp` | MCP clients | Only for the `-allow-host` names; 421 for any other host |
 | `/healthz` | Liveness checks | 200 while the process runs |
-| `/readyz` | The load balancer | 503 until the index is loaded, then 200 |
-| `/metrics` | Monitoring | Prometheus text: requests by method, tool, and status; their durations; requests in flight; readiness |
+| `/readyz` | The load balancer | 503 until the index is loaded (on a first download, until every shard is), then 200 |
+| `/metrics` | Monitoring | Prometheus text: requests by method, tool, and status; their durations; requests stopped at the deadline; requests in flight; readiness. Methods and tools are the server's own; anything else counts as `other` |
 
 Route only `/mcp` from the internet. The others skip the host check, since load balancers and monitors call them by address.
 
@@ -606,11 +606,13 @@ Route only `/mcp` from the internet. The others skip the host check, since load 
 | --- | --- | --- |
 | `-rate` | 120 | Requests a minute for each client, in bursts of up to a quarter of that; then 429, with `Retry-After` |
 | `-max-in-flight` | 64 | Requests answered at once; then 503, with `Retry-After` |
-| `-client-ip-header` | none | The header a trusted proxy gives the client's address in. Without it, the client is the connection's address, which behind a proxy is the proxy's. Set it only when every request comes through that proxy, since anyone can send the header |
+| `-client-ip-header` | none | The header a trusted proxy gives the client's address in, such as Cloudflare's `CF-Connecting-IP`. It counts only when it holds one valid address; a list, such as `X-Forwarded-For`, isn't supported. Without it, the client is the connection's address, which behind a proxy is the proxy's |
 
-A request body is at most 1 MiB (413 past that), and a request takes at most a minute. Cross-origin requests from browsers are refused, as in the local server.
+An IPv6 client is its /64 network, and the limiter tracks at most 50,000 clients, so new ones past that share one limit. A request body is at most 1 MiB (413 past that), and a request that runs past a minute is stopped and answered with an error. Cross-origin requests from browsers are refused, as in the local server. When stopped, the server gives requests in progress 25 seconds to finish.
 
-**Logs:** one JSON line on stderr for each request, with its MCP method, tool, HTTP status, and duration, and lines for index updates. They never include what was asked, its arguments, or the client's address.
+**Behind a proxy,** anyone who can reach the server directly can send the client header, so with `-client-ip-header`, accept connections only from the proxy: behind Cloudflare, let the load balancer take traffic only from Cloudflare's IP ranges.
+
+**Logs:** one JSON line on stderr for each request, with its MCP method, tool, HTTP status, and duration, a line for each request stopped at the deadline, and lines for index updates. They never include what was asked, its arguments, or the client's address.
 
 ## Privacy and security
 

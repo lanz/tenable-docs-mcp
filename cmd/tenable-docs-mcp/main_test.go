@@ -76,8 +76,13 @@ func TestServeHostedFlags(t *testing.T) {
 		{"serve", "-hosted", "-http", ":8080", "-allow-host", " , "},
 		{"serve", "-allow-host", "docs.tenable.com"},
 		{"serve", "-client-ip-header", "CF-Connecting-IP", "-http", "127.0.0.1:8080"},
+		{"serve", "-rate", "60"},
+		{"serve", "-max-in-flight", "10"},
+		{"serve", "-hosted", "-http", ":8080", "-allow-host", "docs.tenable.com:443"},
+		{"serve", "-hosted", "-http", ":8080", "-allow-host", "docs.tenable.com", "-rate", "0"},
+		{"serve", "-hosted", "-http", ":8080", "-allow-host", "docs.tenable.com", "-max-in-flight", "-1"},
 	} {
-		if code, _, errOut := runCmd(args...); code != 2 || !strings.Contains(errOut, "-hosted") {
+		if code, _, errOut := runCmd(args...); code != 2 || !strings.Contains(errOut, "tenable-docs-mcp serve: -") {
 			t.Errorf("%v: exit %d %q", args, code, errOut)
 		}
 	}

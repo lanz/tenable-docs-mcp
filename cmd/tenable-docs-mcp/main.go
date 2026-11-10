@@ -110,24 +110,38 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "%s serve: unexpected argument %q\n", server.Name, fs.Arg(0))
 		return 2
 	}
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 	if *hostedMode {
 		var hosts []string
 		for _, h := range strings.Split(*allowHosts, ",") {
-			if h = strings.TrimSpace(h); h != "" {
-				hosts = append(hosts, h)
+			if strings.TrimSpace(h) == "" {
+				continue
 			}
+			host, err := server.NormalizeHost(h)
+			if err != nil {
+				fmt.Fprintf(stderr, "%s serve: -allow-host: %v\n", server.Name, err)
+				return 2
+			}
+			hosts = append(hosts, host)
 		}
 		if *httpAddr == "" || len(hosts) == 0 {
 			fmt.Fprintf(stderr, "%s serve: -hosted needs -http ADDR and -allow-host HOSTS\n", server.Name)
+			return 2
+		}
+		if *ratePerMin < 1 || *maxInFlight < 1 {
+			fmt.Fprintf(stderr, "%s serve: -rate and -max-in-flight must be 1 or more\n", server.Name)
 			return 2
 		}
 		return serveHosted(ctx, *httpAddr, *indexDir, stderr, server.HostedOptions{
 			AllowHosts: hosts, ClientIPHeader: *clientIP, RatePerMinute: *ratePerMin, MaxInFlight: *maxInFlight,
 		})
 	}
-	if *allowHosts != "" || *clientIP != "" {
-		fmt.Fprintf(stderr, "%s serve: -allow-host and -client-ip-header are for -hosted\n", server.Name)
-		return 2
+	for _, name := range []string{"allow-host", "client-ip-header", "rate", "max-in-flight"} {
+		if set[name] {
+			fmt.Fprintf(stderr, "%s serve: -%s is for -hosted\n", server.Name, name)
+			return 2
+		}
 	}
 	ix := openIndex(*indexDir, stderr)
 	if ix != nil {
@@ -184,12 +198,16 @@ func serve(ctx context.Context, args []string, stderr io.Writer) int {
 	if isTerminalWriter(stderr) {
 		launchScreen(stderr, ix, *httpAddr, false)
 	}
-	return serveHTTP(ctx, server.NewHTTPServer(*httpAddr, server.HTTPHandler(srv)), stderr, true)
+	return serveHTTP(ctx, server.NewHTTPServer(*httpAddr, server.HTTPHandler(srv)), stderr, true, 5*time.Second)
 }
 
 // hostedCheckEvery is how often a hosted server checks for an updated index: the docs
 // are published more than once a day, and a check is one small request.
 const hostedCheckEvery = time.Hour
+
+// hostedShutdown is how long a hosted server lets requests finish when it's stopped:
+// within the 30 seconds ECS waits before killing a task.
+const hostedShutdown = 25 * time.Second
 
 // serveHosted runs a hosted server: for everyone, behind a load balancer. It answers
 // from the published index, checks it for updates hourly, and never fetches from the
@@ -215,7 +233,18 @@ func serveHosted(ctx context.Context, addr, indexDir string, stderr io.Writer, o
 	if opts.Updates != nil {
 		go opts.Updates.Run(ctx)
 	}
-	o.Ready = func() bool { return len(ix.Keys()) > 0 }
+	// Ready once the index has shards, and isn't still on its first download, which
+	// installs shards one at a time. An index built into the image is ready at once.
+	o.Ready = func() bool {
+		if len(ix.Keys()) == 0 {
+			return false
+		}
+		if opts.Updates == nil {
+			return true
+		}
+		st := opts.Updates.Status()
+		return !st.Updating || st.CheckedAt != ""
+	}
 	o.Log = logger
 	h, err := server.HostedHandler(srv, o)
 	if err != nil {
@@ -229,7 +258,7 @@ func serveHosted(ctx context.Context, addr, indexDir string, stderr io.Writer, o
 		launchScreen(stderr, ix, addr, true)
 	}
 	logger.Info("serving", "addr", addr, "hosts", strings.Join(o.AllowHosts, ","), "version", version.Get())
-	return serveHTTP(ctx, hs, stderr, false)
+	return serveHTTP(ctx, hs, stderr, false, hostedShutdown)
 }
 
 // help writes the full help, or a command's: help search is search -h.
@@ -308,9 +337,9 @@ func openIndex(dir string, stderr io.Writer) *index.Index {
 	return ix
 }
 
-// serveHTTP serves until ctx is done. announce says where on stderr; a hosted server
-// logs that itself, as JSON.
-func serveHTTP(ctx context.Context, hs *http.Server, stderr io.Writer, announce bool) int {
+// serveHTTP serves until ctx is done, then gives requests in progress up to grace to
+// finish. announce says where on stderr; a hosted server logs that itself, as JSON.
+func serveHTTP(ctx context.Context, hs *http.Server, stderr io.Writer, announce bool, grace time.Duration) int {
 	errc := make(chan error, 1)
 	go func() { errc <- hs.ListenAndServe() }()
 	if announce {
@@ -322,7 +351,7 @@ func serveHTTP(ctx context.Context, hs *http.Server, stderr io.Writer, announce 
 		return 1
 	case <-ctx.Done():
 	}
-	sctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	sctx, cancel := context.WithTimeout(context.Background(), grace)
 	defer cancel()
 	if err := hs.Shutdown(sctx); err != nil {
 		fmt.Fprintln(stderr, server.Name+": shutdown:", err)

@@ -8,12 +8,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"math"
 	"net"
 	"net/http"
+	"net/netip"
 	"sort"
 	"strings"
 	"sync"
@@ -95,15 +97,30 @@ func newHosted(srv *mcp.Server, o HostedOptions) (*hosted, error) {
 	o.defaults()
 	h := &hosted{opts: o, sem: make(chan struct{}, o.MaxInFlight), clients: map[string]*client{}, metrics: newMetrics()}
 	for _, a := range o.AllowHosts {
-		h.hosts = append(h.hosts, strings.ToLower(strings.TrimSpace(a)))
+		host, err := NormalizeHost(a)
+		if err != nil {
+			return nil, err
+		}
+		h.hosts = append(h.hosts, host)
 	}
+	// Metrics and logs name only the server's own tools; any other name a request makes
+	// up is "other".
+	names, err := toolNames(srv)
+	if err != nil {
+		return nil, err
+	}
+	h.tools = names
+	// The deadline is applied inside MCP, where it reaches the tool on every protocol
+	// version, and a late request gets an error rather than an empty response.
+	srv.AddReceivingMiddleware(h.deadline)
 	// The SDK's DNS-rebinding check is for servers on localhost; a hosted server checks
 	// the Host header against AllowHosts instead, which also covers a proxy on the same
 	// machine.
 	h.mcp = mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, &mcp.StreamableHTTPOptions{
-		Stateless:                  true,
-		JSONResponse:               true,
-		DisableLocalhostProtection: true,
+		Stateless:                    true,
+		JSONResponse:                 true,
+		DisableLocalhostProtection:   true,
+		PropagateRequestCancellation: true,
 	})
 	h.cop = http.NewCrossOriginProtection()
 
@@ -129,6 +146,7 @@ type hosted struct {
 	mux   *http.ServeMux
 	opts  HostedOptions
 	hosts []string
+	tools map[string]bool
 	mcp   http.Handler
 	cop   *http.CrossOriginProtection
 	sem   chan struct{}
@@ -155,6 +173,7 @@ func (h *hosted) serveMCP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	call := mcpCall{Method: "-", Tool: "-"}
 	code := h.handle(w, r, &call)
+	call.Method, call.Tool = h.known(call.Method, call.Tool)
 	h.metrics.observe(call.Method, call.Tool, code, time.Since(start))
 	if h.opts.Log != nil {
 		h.opts.Log.Info("request", "method", call.Method, "tool", call.Tool, "status", code,
@@ -195,15 +214,55 @@ func (h *hosted) handle(w http.ResponseWriter, r *http.Request, call *mcpCall) i
 			text(w, http.StatusRequestEntityTooLarge, "the request is too large\n")
 			return http.StatusRequestEntityTooLarge
 		}
-		*call = parseCall(body)
+		var id json.RawMessage
+		*call, id = parseCall(body)
+		// subscriptions/listen holds a stream open for change notifications, which mean
+		// little across stateless instances, and would hold a slot all the while.
+		if call.Method == "subscriptions/listen" {
+			return refuse(w, id, "subscriptions/listen isn't available on this server: it's stateless, and its tools and resources don't change while it runs")
+		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		r.ContentLength = int64(len(body))
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), h.opts.RequestTimeout)
+	// The deadline middleware answers first; this one only backs it up, so the slot is
+	// freed even if a response can't be written.
+	ctx, cancel := context.WithTimeout(r.Context(), h.opts.RequestTimeout+10*time.Second)
 	defer cancel()
 	sw := &statusWriter{ResponseWriter: w, code: http.StatusOK}
 	h.mcp.ServeHTTP(sw, r.WithContext(ctx))
 	return sw.code
+}
+
+// refuse answers a JSON-RPC request with an error, as MCP clients expect.
+func refuse(w http.ResponseWriter, id json.RawMessage, msg string) int {
+	if len(id) == 0 {
+		id = json.RawMessage("null")
+	}
+	body, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": id,
+		"error": map[string]any{"code": -32601, "message": msg},
+	})
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+	return http.StatusOK
+}
+
+// NormalizeHost checks and normalizes a host name a hosted server answers for: lower
+// case, without a trailing dot or IPv6 brackets. A port isn't allowed: the Host
+// header's port is ignored.
+func NormalizeHost(h string) (string, error) {
+	host := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(h), "."))
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
+	if host == "" {
+		return "", fmt.Errorf("an empty host name")
+	}
+	if strings.Contains(host, ":") {
+		if _, err := netip.ParseAddr(host); err != nil {
+			return "", fmt.Errorf("host %q: give the name without a port", h)
+		}
+	}
+	return host, nil
 }
 
 func (h *hosted) allowedHost(host string) bool {
@@ -211,6 +270,7 @@ func (h *hosted) allowedHost(host string) bool {
 		host = hh
 	}
 	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
 	for _, a := range h.hosts {
 		if host == a {
 			return true
@@ -220,18 +280,33 @@ func (h *hosted) allowedHost(host string) bool {
 }
 
 // clientKey is who a request is from, for its rate limit: the address the trusted
-// proxy gives, or the connection's.
+// proxy gives in ClientIPHeader, if that's one valid address, or else the connection's.
+// An IPv6 client is its /64 network, which one user can rotate through freely.
 func (h *hosted) clientKey(r *http.Request) string {
 	if name := h.opts.ClientIPHeader; name != "" {
-		if v := strings.TrimSpace(strings.Split(r.Header.Get(name), ",")[0]); v != "" {
-			return v
+		if vals := r.Header.Values(name); len(vals) == 1 {
+			if a, err := netip.ParseAddr(strings.TrimSpace(vals[0])); err == nil {
+				return addrKey(a)
+			}
 		}
 	}
-	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-		return host
+	if ap, err := netip.ParseAddrPort(r.RemoteAddr); err == nil {
+		return addrKey(ap.Addr())
 	}
-	return r.RemoteAddr
+	return "unknown"
 }
+
+func addrKey(a netip.Addr) string {
+	a = a.Unmap()
+	if a.Is6() {
+		return netip.PrefixFrom(a, 64).Masked().String()
+	}
+	return a.String()
+}
+
+// maxClients caps the clients the rate limiter tracks. Past it, new clients share one
+// limit, so memory stays bounded whoever sends requests.
+const maxClients = 50_000
 
 // allow reports whether a client may make a request now, and if not, how long until
 // it may. Clients not seen for ten minutes are forgotten.
@@ -247,6 +322,10 @@ func (h *hosted) allow(key string, now time.Time) (time.Duration, bool) {
 		h.swept = now
 	}
 	c := h.clients[key]
+	if c == nil && len(h.clients) >= maxClients {
+		key = "overflow"
+		c = h.clients[key]
+	}
 	if c == nil {
 		c = &client{lim: rate.NewLimiter(rate.Limit(float64(h.opts.RatePerMinute)/60), h.opts.Burst)}
 		h.clients[key] = c
@@ -264,16 +343,17 @@ func (h *hosted) allow(key string, now time.Time) (time.Duration, bool) {
 // tool.
 type mcpCall struct{ Method, Tool string }
 
-func parseCall(body []byte) mcpCall {
+func parseCall(body []byte) (mcpCall, json.RawMessage) {
 	var m struct {
-		Method string `json:"method"`
+		ID     json.RawMessage `json:"id"`
+		Method string          `json:"method"`
 		Params struct {
 			Name string `json:"name"`
 		} `json:"params"`
 	}
 	c := mcpCall{Method: "-", Tool: "-"}
 	if json.Unmarshal(body, &m) != nil {
-		return c
+		return c, nil
 	}
 	if m.Method != "" {
 		c.Method = label(m.Method)
@@ -281,7 +361,89 @@ func parseCall(body []byte) mcpCall {
 	if m.Method == "tools/call" && m.Params.Name != "" {
 		c.Tool = label(m.Params.Name)
 	}
-	return c
+	return c, m.ID
+}
+
+// methods are the MCP methods metrics and logs name; any other is "other".
+var methods = map[string]bool{
+	"initialize": true, "ping": true, "tools/list": true, "tools/call": true,
+	"resources/list": true, "resources/read": true, "resources/templates/list": true,
+	"resources/subscribe": true, "resources/unsubscribe": true, "prompts/list": true,
+	"prompts/get": true, "completion/complete": true, "logging/setLevel": true,
+	"subscriptions/listen": true, "notifications/initialized": true, "notifications/cancelled": true,
+	"notifications/roots/list_changed": true, "-": true,
+}
+
+// known maps a request's method and tool to the names metrics and logs use: the known
+// methods and the server's own tools, and "other" for anything else.
+func (h *hosted) known(method, tool string) (string, string) {
+	if !methods[method] {
+		method = "other"
+	}
+	if tool != "-" && !h.tools[tool] {
+		tool = "other"
+	}
+	return method, tool
+}
+
+// toolNames lists the server's tools, by asking it as a client would.
+func toolNames(srv *mcp.Server) (map[string]bool, error) {
+	ctx := context.Background()
+	st, ct := mcp.NewInMemoryTransports()
+	ss, err := srv.Connect(ctx, st, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer ss.Close()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: Name + "-metrics", Version: "0"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer cs.Close()
+	names := map[string]bool{}
+	for t, err := range cs.Tools(ctx, nil) {
+		if err != nil {
+			return nil, err
+		}
+		names[t.Name] = true
+	}
+	return names, nil
+}
+
+// deadline stops a request that runs past RequestTimeout, and answers it with an
+// error. The handler's context is cancelled, so a tool that checks it stops too.
+func (h *hosted) deadline(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		ctx, cancel := context.WithTimeout(ctx, h.opts.RequestTimeout)
+		defer cancel()
+		type answer struct {
+			res mcp.Result
+			err error
+		}
+		done := make(chan answer, 1)
+		go func() {
+			res, err := next(ctx, method, req)
+			done <- answer{res, err}
+		}()
+		select {
+		case a := <-done:
+			return a.res, a.err
+		case <-ctx.Done():
+			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, ctx.Err()
+			}
+			tool := "-"
+			if c, ok := req.(*mcp.CallToolRequest); ok && c.Params != nil {
+				tool = label(c.Params.Name)
+			}
+			m, t := h.known(label(method), tool)
+			h.metrics.timedOut(m, t)
+			if h.opts.Log != nil {
+				h.opts.Log.Warn("timed out", "method", m, "tool", t, "after_ms", h.opts.RequestTimeout.Milliseconds())
+			}
+			return nil, fmt.Errorf("the request took longer than %s and was stopped; try again, or narrow it", h.opts.RequestTimeout)
+		}
+	}
 }
 
 // label makes a value from a request safe for a metric label and a log line: letters,
@@ -333,13 +495,22 @@ type metrics struct {
 	requests map[[3]string]int64
 	seconds  map[[2]string]float64
 	counts   map[[2]string]int64
+	timeouts map[[2]string]int64
 }
 
 // maxSeries caps the method and tool pairs metrics keeps; others count as "other".
 const maxSeries = 100
 
 func newMetrics() *metrics {
-	return &metrics{requests: map[[3]string]int64{}, seconds: map[[2]string]float64{}, counts: map[[2]string]int64{}}
+	return &metrics{requests: map[[3]string]int64{}, seconds: map[[2]string]float64{}, counts: map[[2]string]int64{},
+		timeouts: map[[2]string]int64{}}
+}
+
+// timedOut counts a request the deadline stopped. Its method and tool are known names.
+func (m *metrics) timedOut(method, tool string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.timeouts[[2]string{method, tool}]++
 }
 
 func (m *metrics) observe(method, tool string, code int, d time.Duration) {
@@ -377,6 +548,16 @@ func (m *metrics) write(w io.Writer, inFlight int, ready bool) {
 	for _, k := range pairs {
 		fmt.Fprintf(w, "tdm_request_duration_seconds_sum{method=%q,tool=%q} %g\n", k[0], k[1], m.seconds[k])
 		fmt.Fprintf(w, "tdm_request_duration_seconds_count{method=%q,tool=%q} %d\n", k[0], k[1], m.counts[k])
+	}
+	fmt.Fprintln(w, "# HELP tdm_request_timeouts_total MCP requests stopped at the request deadline.")
+	fmt.Fprintln(w, "# TYPE tdm_request_timeouts_total counter")
+	late := make([][2]string, 0, len(m.timeouts))
+	for k := range m.timeouts {
+		late = append(late, k)
+	}
+	sort.Slice(late, func(i, j int) bool { return late[i][0]+"\x00"+late[i][1] < late[j][0]+"\x00"+late[j][1] })
+	for _, k := range late {
+		fmt.Fprintf(w, "tdm_request_timeouts_total{method=%q,tool=%q} %d\n", k[0], k[1], m.timeouts[k])
 	}
 	fmt.Fprintln(w, "# HELP tdm_in_flight MCP requests being answered now.")
 	fmt.Fprintln(w, "# TYPE tdm_in_flight gauge")
