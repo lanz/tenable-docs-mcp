@@ -27,7 +27,7 @@ func TestVersion(t *testing.T) {
 func TestHelp(t *testing.T) {
 	for _, arg := range []string{"help", "-h", "--help"} {
 		code, out, _ := runCmd(arg)
-		if code != 0 || !strings.Contains(out, "Usage:") {
+		if code != 0 || !strings.Contains(out, "USAGE") || !strings.Contains(out, "ASK THE DOCS") {
 			t.Errorf("%s: code %d, output %q", arg, code, out)
 		}
 	}
@@ -35,7 +35,7 @@ func TestHelp(t *testing.T) {
 
 func TestUnknownCommand(t *testing.T) {
 	code, _, errOut := runCmd("serach")
-	if code != 2 || !strings.Contains(errOut, `unknown command "serach"`) || !strings.Contains(errOut, "Usage:") {
+	if code != 2 || !strings.Contains(errOut, `unknown command "serach"`) || !strings.Contains(errOut, `Did you mean "search"?`) {
 		t.Errorf("unknown command: code %d, stderr %q", code, errOut)
 	}
 }

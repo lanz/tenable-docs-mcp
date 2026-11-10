@@ -145,18 +145,18 @@ func TestToolCommandUsage(t *testing.T) {
 		}
 	}
 	code, _, errOut := runCmd("search", "-h")
-	if code != 0 || !strings.Contains(errOut, "-product string") || !strings.Contains(errOut, "-release-notes") {
+	if code != 0 || !strings.Contains(errOut, "-product PRODUCT") || !strings.Contains(errOut, "-release-notes") {
 		t.Errorf("search -h: %d %q", code, errOut)
 	}
 	// help lists every command.
 	_, help, _ := runCmd("help")
 	for _, c := range toolCommands {
-		if !strings.Contains(help, "tenable-docs-mcp "+c.Name+" ") {
+		if !strings.Contains(help, "\n  "+c.Name+" ") {
 			t.Errorf("help doesn't list %s", c.Name)
 		}
 	}
 	for _, c := range []string{"doctor", "config", "gaps submit"} {
-		if !strings.Contains(help, "tenable-docs-mcp "+c) {
+		if !strings.Contains(help, "\n  "+c+" ") {
 			t.Errorf("help doesn't list %s", c)
 		}
 	}

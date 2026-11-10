@@ -40,15 +40,15 @@ var errQuit = errors.New("quit")
 // is sent without their answer. Sent questions are marked so they aren't offered again.
 func gapsSubmit(ctx context.Context, args []string, in io.Reader, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet(server.Name+" gaps submit", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	file := fs.String("file", "", "the gaps file (default: tenable-docs-mcp/gaps.jsonl in the user's settings folder)")
 	since := fs.String("since", "", "only questions recorded on or after this date (YYYY-MM-DD)")
 	dir := fs.String("index", "", "the index folder, for the pages the questions are about (default: $TDM_INDEX_DIR, or the user's cache folder)")
+	setUsage(fs, stderr, "gaps submit [-since YYYY-MM-DD] [-file FILE] [-index DIR]", "offer each recorded question that hasn't been sent to Tenable's documentation team, one at a time, to send, edit, or skip. Nothing is sent without your answer")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, "Usage: %s gaps submit [-since YYYY-MM-DD] [-file FILE] [-index DIR]\n", server.Name)
+		fs.Usage()
 		return 2
 	}
 	var from time.Time

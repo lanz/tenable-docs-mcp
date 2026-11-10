@@ -183,10 +183,7 @@ func runTool(ctx context.Context, c toolCommand, args []string, stdout, stderr i
 			bools[name] = fs.Bool(flagName(name), false, p.Description)
 		}
 	}
-	fs.Usage = func() {
-		fmt.Fprintf(stderr, "Usage: %s %s [flags] %s\n\n%s.\n\nFlags:\n", server.Name, c.Name, c.ArgName, upperFirst(c.About))
-		fs.PrintDefaults()
-	}
+	setUsage(fs, stderr, strings.TrimSpace(c.Name+" [flags] "+c.ArgName), c.About+".")
 	words, err := parseInterspersed(fs, args)
 	if errors.Is(err, flag.ErrHelp) {
 		return 0

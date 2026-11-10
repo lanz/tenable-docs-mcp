@@ -44,14 +44,14 @@ var executable = func() (string, error) {
 // files.
 func configCmd(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet(server.Name+" config", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	client := fs.String("client", "", "only this client: "+strings.Join(configClients, ", ")+" (default: all of them)")
 	dir := fs.String("index", "", "an index folder for the server to use, instead of the default")
+	setUsage(fs, stderr, "config [-client NAME] [-index DIR]", "print the settings that add this server to your MCP clients, ready to paste, with this program's path filled in. It only prints, and never edits a client's files")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	if fs.NArg() > 0 || *client != "" && !slices.Contains(configClients, *client) {
-		fmt.Fprintf(stderr, "Usage: %s config [-client %s] [-index DIR]\n", server.Name, strings.Join(configClients, "|"))
+		fs.Usage()
 		return 2
 	}
 	bin, err := executable()

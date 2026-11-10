@@ -28,37 +28,18 @@ import (
 	"github.com/lanz/tenable-docs-mcp/internal/version"
 )
 
-const indexUsage = `Usage:
-  %[1]s index pull [-sites en,jp] [-index DIR]
-        download the published index from docs.tenable.com, or update it: only shards
-        that changed are downloaded and rebuilt
-  %[1]s index crawl [-sites en,jp] [-index DIR]
-        build or update the index from the live sites instead: a site the index has
-        nothing for is read in full (all eight take about an hour); after that, only
-        what changed is fetched
-  %[1]s index build -source "en=DIR;jp=DIR" [-sites en,jp] [-guide-names FILE] [-out DIR | -index DIR] [-json]
-        read the docs from local copies of the sites (one folder per site, as the
-        sites publish them) and write a snapshot to -out, or an index to -index;
-        -guide-names names the guides, from a JSON file of site codes to guide paths
-        to names ({"en": {"nessus": "Tenable Nessus User Guide"}})
-  %[1]s index import [-sites en,jp] [-index DIR] SNAPSHOT
-        verify a snapshot and build the local index from it
-  %[1]s index verify SNAPSHOT
-        check a snapshot's files against its manifest
-  %[1]s index llms -out DIR [-sites en,jp] [-index DIR]
-        write each site's llms.txt (https://llmstxt.org), listing its guides, from the
-        index into DIR/SITE/llms.txt
-`
-
 // now is the clock, for tests.
 var now = time.Now
 
 func indexCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintf(stderr, indexUsage, server.Name)
+		writeGroupHelp(stderr, "index", "Download, build, update, or check the documentation index", indexRows)
 		return 2
 	}
 	switch args[0] {
+	case "-h", "-help", "--help", "help":
+		writeGroupHelp(stdout, "index", "Download, build, update, or check the documentation index", indexRows)
+		return 0
 	case "pull":
 		return indexPull(ctx, args[1:], stdout, stderr)
 	case "crawl":
@@ -72,7 +53,7 @@ func indexCmd(ctx context.Context, args []string, stdout, stderr io.Writer) int 
 	case "llms":
 		return indexLLMs(ctx, args[1:], stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "%s index: unknown command %q\n\n"+indexUsage, server.Name, args[0], server.Name)
+		unknownCommand(stderr, server.Name+" index", args[0], []string{"pull", "crawl", "build", "import", "verify", "llms"})
 		return 2
 	}
 }
@@ -125,18 +106,18 @@ func progressPrinter(stderr io.Writer) func(string, int, int) {
 
 func indexBuild(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet(server.Name+" index build", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	source := fs.String("source", "", `the sites' local copies, as "en=DIR;jp=DIR" (as TDM_SITE_DIRS)`)
 	sitesFlag := fs.String("sites", "", "only these sites, such as en,jp (default: every site in -source)")
 	out := fs.String("out", "", "write a snapshot to this folder")
 	dir := fs.String("index", "", "write the index in this folder instead (default: $TDM_INDEX_DIR, or the user's cache folder)")
 	asJSON := fs.Bool("json", false, "print the report as JSON")
 	namesFile := fs.String("guide-names", "", `name the guides from this JSON file: {"en": {"nessus": "Tenable Nessus User Guide"}}`)
+	setUsage(fs, stderr, `index build -source "en=DIR;jp=DIR" [flags]`, "read the docs from local copies of the sites (one folder per site, as the sites publish them), and write a snapshot to -out, or an index to -index")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	if *source == "" || fs.NArg() > 0 || *out != "" && *dir != "" {
-		fmt.Fprintf(stderr, indexUsage, server.Name)
+		fs.Usage()
 		return 2
 	}
 	dirs, err := site.ParseSiteDirs(*source)
@@ -277,14 +258,14 @@ func shardCounts(pages map[string]int) string {
 
 func indexImport(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet(server.Name+" index import", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	sitesFlag := fs.String("sites", "", "only these sites, such as en,jp (default: every site in the snapshot)")
 	dir := fs.String("index", "", "the index folder (default: $TDM_INDEX_DIR, or the user's cache folder)")
+	setUsage(fs, stderr, "index import [-sites en,jp] [-index DIR] SNAPSHOT", "verify a snapshot, and build the local index from it")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	if fs.NArg() != 1 {
-		fmt.Fprintf(stderr, indexUsage, server.Name)
+		fs.Usage()
 		return 2
 	}
 	snap := fs.Arg(0)
@@ -389,14 +370,14 @@ func liveCrawler(ix *index.Index, live site.Source, siteList string) (*crawl.Cra
 
 func indexPull(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet(server.Name+" index pull", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	sitesFlag := fs.String("sites", "", "only these sites, such as en,jp (default: $TDM_SITES, or every site)")
 	dir := fs.String("index", "", "the index folder (default: $TDM_INDEX_DIR, or the user's cache folder)")
+	setUsage(fs, stderr, "index pull [-sites en,jp] [-index DIR]", "download the published index from docs.tenable.com, or update it: only the shards that changed are downloaded and rebuilt")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, indexUsage, server.Name)
+		fs.Usage()
 		return 2
 	}
 	d, err := indexDir(*dir)
@@ -449,14 +430,14 @@ var crawlSource site.Source
 
 func indexCrawl(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet(server.Name+" index crawl", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	sitesFlag := fs.String("sites", "", "only these sites, such as en,jp (default: $TDM_SITES, or every site)")
 	dir := fs.String("index", "", "the index folder (default: $TDM_INDEX_DIR, or the user's cache folder)")
+	setUsage(fs, stderr, "index crawl [-sites en,jp] [-index DIR]", "build or update the index from the live sites instead: a site the index has nothing for is read in full (all eight take about an hour); after that, only what changed is fetched")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	if fs.NArg() > 0 {
-		fmt.Fprintf(stderr, indexUsage, server.Name)
+		fs.Usage()
 		return 2
 	}
 	list := *sitesFlag
@@ -515,8 +496,13 @@ func indexCrawl(ctx context.Context, args []string, stdout, stderr io.Writer) in
 }
 
 func indexVerify(args []string, stdout, stderr io.Writer) int {
-	if len(args) != 1 {
-		fmt.Fprintf(stderr, indexUsage, server.Name)
+	asked := slices.ContainsFunc(args, func(a string) bool { return a == "-h" || a == "-help" || a == "--help" })
+	if len(args) != 1 || asked {
+		fmt.Fprintf(stderr, "%s\n  %s index verify SNAPSHOT\n\n", styleFor(stderr).heading("Usage"), server.Name)
+		writeParagraph(stderr, "Check a snapshot's files against its manifest.")
+		if asked {
+			return 0
+		}
 		return 2
 	}
 	m, err := snapshot.ReadManifest(args[0])
@@ -540,15 +526,15 @@ func indexVerify(args []string, stdout, stderr io.Writer) int {
 // indexLLMs writes each site's llms.txt from the index, into -out/<site>/llms.txt.
 func indexLLMs(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet(server.Name+" index llms", flag.ContinueOnError)
-	fs.SetOutput(stderr)
 	dir := fs.String("index", "", "the index folder (default: $TDM_INDEX_DIR, or the user's cache folder)")
 	sitesFlag := fs.String("sites", "", "only these sites, such as en,jp (default: every site in the index)")
 	out := fs.String("out", "", "write each site's file to this folder, as SITE/llms.txt")
+	setUsage(fs, stderr, "index llms -out DIR [-sites en,jp] [-index DIR]", "write each site's llms.txt (https://llmstxt.org), listing its guides, from the index into DIR/SITE/llms.txt")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	if *out == "" || fs.NArg() > 0 {
-		fmt.Fprintf(stderr, indexUsage, server.Name)
+		fs.Usage()
 		return 2
 	}
 	d, err := indexDir(*dir)
