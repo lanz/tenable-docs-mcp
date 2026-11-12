@@ -175,6 +175,9 @@ func TestColor(t *testing.T) {
 	if s := (style{color: true}); s.bold("x") != "\x1b[1mx\x1b[0m" || (style{}).bold("x") != "x" {
 		t.Error("bold")
 	}
+	if s := (style{color: true}); s.pass("✓") != "\x1b[32m✓\x1b[0m" || s.fail("✗") != "\x1b[1;31m✗\x1b[0m" {
+		t.Errorf("pass %q, fail %q", s.pass("✓"), s.fail("✗"))
+	}
 }
 
 func TestPlaceholderAndWrap(t *testing.T) {
