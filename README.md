@@ -141,7 +141,7 @@ When `read_doc`, `outline`, or `related_pages` is given a docs page the index do
 | `TDM_CRAWL` | `off` turns off reading the live sites when the prebuilt index can't be reached, and fetching new pages on demand. The default is `on`. |
 | `TDM_SITES` | Only download or read these sites, such as `en,jp` (default: all eight). `-sites` on `index pull` and `index crawl` does the same for one run. |
 | `TDM_SYNONYMS` | The file of your own synonyms, instead of `synonyms.txt` in the settings folder (see [Synonyms](#synonyms)). |
-| `NO_COLOR` | Any value turns off color in the help and the launch screen. Color is used only in a terminal, and never when `TERM` is `dumb`. |
+| `NO_COLOR` | Any value turns off color in the help, `doctor`, and the launch screen. Color is used only in a terminal, and never when `TERM` is `dumb`. |
 
 ## Connect it to an MCP client
 

@@ -67,6 +67,10 @@ func (s style) dim(t string) string     { return s.wrap("2", t) }
 func (s style) accent(t string) string  { return s.wrap("36", t) }
 func (s style) heading(t string) string { return s.wrap("1", strings.ToUpper(t)) }
 
+// pass and fail mark the checks that passed and failed, in the theme's green and red.
+func (s style) pass(t string) string { return s.wrap("32", t) }
+func (s style) fail(t string) string { return s.wrap("1;31", t) }
+
 // header writes the wordmark and the tagline with the version, on a terminal; elsewhere,
 // such as in a file or a pipe, just the name, version, and tagline.
 func header(w io.Writer, s style, terminal bool) {

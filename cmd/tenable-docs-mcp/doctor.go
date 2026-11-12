@@ -54,9 +54,10 @@ func doctor(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	failed := false
-	ok := func(format string, a ...any) { fmt.Fprintf(stdout, "✓ "+format+"\n", a...) }
-	warn := func(format string, a ...any) { fmt.Fprintf(stdout, "! "+format+"\n", a...) }
-	bad := func(format string, a ...any) { failed = true; fmt.Fprintf(stdout, "✗ "+format+"\n", a...) }
+	s := styleFor(stdout)
+	ok := func(format string, a ...any) { fmt.Fprintf(stdout, s.pass("✓")+" "+format+"\n", a...) }
+	warn := func(format string, a ...any) { fmt.Fprintf(stdout, s.bold("!")+" "+format+"\n", a...) }
+	bad := func(format string, a ...any) { failed = true; fmt.Fprintf(stdout, s.fail("✗")+" "+format+"\n", a...) }
 
 	fmt.Fprintf(stdout, "%s %s (%s, %s/%s)\n\n", server.Name, version.Get(), runtime.Version(), runtime.GOOS, runtime.GOARCH)
 
