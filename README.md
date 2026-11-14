@@ -1,11 +1,11 @@
 # Tenable Docs MCP
 
-<img src="docs/images/help-top.png" alt="The top of tenable-docs-mcp's help: the Tenable Docs MCP wordmark, the tagline &quot;Cited answers from Tenable's product documentation&quot; with version v1.0.0, and the commands for asking the docs, such as search, read, setting, role, requirements, and release-notes." width="749">
+<img src="docs/images/help-top.png" alt="The top of tenable-docs-mcp's help: the Tenable Docs MCP wordmark, the tagline &quot;Cited answers from Tenable's product documentation&quot; with version v1.0.0, and the commands for asking the docs, such as search, read, setting, role, requirements, and release-notes." width="695">
 
 <details>
 <summary>The full help</summary>
 
-<img src="docs/images/help.png" alt="The full help of tenable-docs-mcp v1.0.0: the commands for running the server, asking the docs, setting up and checking, recorded questions, and the index, followed by the flags, the environment variables, and the exit status." width="749">
+<img src="docs/images/help.png" alt="The full help of tenable-docs-mcp v1.0.0: the commands for running the server, asking the docs, setting up and checking, recorded questions, and the index, followed by the flags, the environment variables, and the exit status." width="695">
 
 </details>
 
