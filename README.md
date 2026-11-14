@@ -1,5 +1,14 @@
 # Tenable Docs MCP
 
+<img src="docs/images/help-top.png" alt="The top of tenable-docs-mcp's help: the Tenable Docs MCP wordmark, the tagline &quot;Cited answers from Tenable's product documentation&quot; with version v1.0.0, and the commands for asking the docs, such as search, read, setting, role, requirements, and release-notes." width="749">
+
+<details>
+<summary>The full help</summary>
+
+<img src="docs/images/help.png" alt="The full help of tenable-docs-mcp v1.0.0: the commands for running the server, asking the docs, setting up and checking, recorded questions, and the index, followed by the flags, the environment variables, and the exit status." width="749">
+
+</details>
+
 A [Model Context Protocol](https://modelcontextprotocol.io) server that answers questions from Tenable's product documentation, with a link to the exact section that supports each answer. It covers [docs.tenable.com](https://docs.tenable.com) and its seven translated sites, in every product, guide, and published version, and it runs locally as a single Go binary with an embedded SQLite index.
 
 For questions about Tenable's APIs, use the [Tenable Developer Portal MCP](https://developer.tenable.com/mcp), which developer.tenable.com hosts. The two are complementary: this server covers the product documentation, and that one covers the API reference.
@@ -36,6 +45,10 @@ Tenable Docs MCP indexes that structure and exposes it through MCP tools, so an 
 - cite a stable link to the heading, and check every link before sending the answer;
 - say plainly when the docs don't cover something.
 
+For example, asked which ports Security Center needs open, Claude Desktop answers from the Port Requirements page and links to it:
+
+<img src="docs/images/claude-desktop-cited-answer.png" alt="Claude Desktop answering &quot;Which ports does Security Center need open?&quot; after using the Tenable docs tools: tables of Security Center's inbound and outbound ports and what each is for, notes on reserved ports and online instances, and a link to the Port Requirements page in the Security Center docs, updated 2026-11-11." width="600">
+
 [With and without the Tenable Docs MCP](docs/demo.md) shows the difference on four real questions: without it, an assistant answers from memory, and gets two of them wrong.
 
 ## Features
@@ -51,6 +64,13 @@ Tenable Docs MCP indexes that structure and exposes it through MCP tools, so an 
 - **Local and private.** No telemetry. The only routine network access is downloading the prebuilt index and checking it for updates once a day, or reading the docs sites when it can't be reached; both can be turned off. See [Privacy and security](#privacy-and-security).
 - **Single static binary.** Pure Go, including the SQLite driver ([modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)), so it builds with `CGO_ENABLED=0` for Linux, macOS, and Windows on amd64 and arm64.
 
+<details>
+<summary>A question in Japanese, answered from the Japanese docs</summary>
+
+<img src="docs/images/claude-desktop-japanese.png" alt="Claude Desktop answering a question asked in Japanese, &quot;Nessusのポート要件は？&quot; (What are Nessus's port requirements?): the answer is in Japanese, with tables of Nessus's inbound and outbound ports, and cites the Port Requirements page in the Nessus docs." width="600">
+
+</details>
+
 ## Install
 
 Each release has these ways to install it. Releases are on the [releases page](https://github.com/lanz/tenable-docs-mcp/releases), with a `SHA256SUMS` file, an SBOM, and build provenance attestations (`gh attestation verify FILE --repo lanz/tenable-docs-mcp`).
@@ -58,6 +78,13 @@ Each release has these ways to install it. Releases are on the [releases page](h
 ### Claude Desktop extension
 
 Download `tenable-docs-mcp_<version>.mcpb` from the release, and open it, or drag it onto Claude Desktop's **Settings > Extensions**. Claude Desktop installs it and adds the server; there's nothing to configure. The extension holds a binary for each platform: a universal macOS binary for Apple silicon and Intel, Windows (x64, which Windows on Arm runs too), and Linux (x64).
+
+<details>
+<summary>The extension in Claude Desktop</summary>
+
+<img src="docs/images/claude-desktop-extension.png" alt="Claude Desktop's Settings, on the Extensions page: Tenable Docs MCP is listed under &quot;Installed on your computer&quot;, with a Configure button." width="600">
+
+</details>
 
 ### A binary
 
@@ -159,12 +186,26 @@ The server speaks MCP over stdio, so a client runs it as a command. **[Connectin
 
 `tenable-docs-mcp config` prints each client's settings with this binary's path already in them and quoted correctly; `-client` picks one, and `-index` adds an index folder. It only prints, and never edits a client's files. `tenable-docs-mcp doctor` checks that everything the server needs is in place.
 
+<details>
+<summary>What doctor checks</summary>
+
+<img src="docs/images/doctor.png" alt="The output of tenable-docs-mcp doctor for v1.0.0: the index opens, with 13 shards and 21,766 pages; when it last checked for an update, and when the snapshot was built; and that docs.tenable.com's robots.txt and the index manifest are reachable." width="749">
+
+</details>
+
 For example, in Claude Code:
 
 ```bash
 claude mcp add --scope user tenable-docs -- /path/to/tenable-docs-mcp
 claude mcp add --scope user --transport http tenable-developer https://developer.tenable.com/mcp
 ```
+
+<details>
+<summary>A question in Claude Code</summary>
+
+<img src="docs/images/claude-code-answer.png" alt="Claude Code answering &quot;What's the default maximum number of hosts Nessus scans at the same time?&quot; after calling the Tenable docs tools: 30 hosts, the default for the Max simultaneous hosts per scan setting, with a link to its section in Nessus's Advanced Scan Settings, a caveat about the scanner's own max_hosts setting, and the related defaults." width="900">
+
+</details>
 
 ### Other clients
 
@@ -250,6 +291,13 @@ The server registers 18 tools. Each returns structured output (with a JSON schem
 | `open_feedback_form` | Shows the user a feedback form for a docs page. The assistant chooses only the page and whether the user found it helpful; the user writes the comment, and there's no argument for one. | Only if the user accepts the form |
 | `index_status` | The server's version, Go version, index folder, and each shard's pages, sections, schema version, build time, and last-indexed time; the automatic updates: where they come from, the last check, when the snapshot was built, any update in progress, and the last error; and whether a newer release of the server is available. | No |
 | `refresh_index` | Updates given pages (up to 500), or every page of a guide and its table of contents, from the live sites. Reports checked, updated, unchanged, removed, and skipped pages, with progress notifications when the client asks for them. | Yes |
+
+<details>
+<summary>The feedback form in Claude Code</summary>
+
+<img src="docs/images/claude-code-feedback-form.png" alt="Claude Code showing the server's feedback form after the user asked to give positive feedback on a page: the form names the docs page, and has a comment the user wrote and an optional email address, with Accept and Decline. Nothing is sent unless the user accepts." width="900">
+
+</details>
 
 ## Prompts, resources, and completions
 
