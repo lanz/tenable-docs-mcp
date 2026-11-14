@@ -389,11 +389,11 @@ func registerSpecific(s *mcp.Server, env *Env) {
 		for i, st := range out.Settings {
 			fmt.Fprintf(&b, "%d. %s (%s)", i+1, st.Name, joinNonEmpty(", ", st.Product, versionLabel(st.Version)))
 			if st.Default != "" {
-				fmt.Fprintf(&b, ": default %s", oneLine(st.Default, 120))
+				fmt.Fprintf(&b, ": default %s", whole(st.Default))
 			}
 			b.WriteString("\n")
 			if st.Description != "" {
-				fmt.Fprintf(&b, "   %s\n", oneLine(st.Description, 220))
+				fmt.Fprintf(&b, "   %s\n", whole(st.Description))
 			}
 			fmt.Fprintf(&b, "   %s\n", st.URL)
 		}
@@ -456,7 +456,7 @@ func registerSpecific(s *mcp.Server, env *Env) {
 		for _, a := range out.Answers {
 			fmt.Fprintf(&b, "%s (%s) %s\n", a.Page, joinNonEmpty(", ", a.Product, versionLabel(a.Version)), a.URL)
 			for _, r := range a.Required {
-				fmt.Fprintf(&b, "   %s\n", oneLine(joinNonEmpty(": ", r.Label, r.Text), 240))
+				fmt.Fprintf(&b, "   %s\n", whole(joinNonEmpty(": ", r.Label, r.Text)))
 			}
 		}
 		for _, l := range out.Without {
@@ -555,7 +555,7 @@ func registerSpecific(s *mcp.Server, env *Env) {
 			}
 			var parts []string
 			for _, f := range r.Fields {
-				parts = append(parts, joinNonEmpty(": ", f.Label, oneLine(f.Text, 120)))
+				parts = append(parts, joinNonEmpty(": ", f.Label, whole(f.Text)))
 			}
 			fmt.Fprintf(&b, "   - %s\n", strings.Join(parts, "; "))
 		}
@@ -704,7 +704,7 @@ func registerSpecific(s *mcp.Server, env *Env) {
 			}
 		}
 		for _, d := range out.Definitions {
-			fmt.Fprintf(&b, "%s: %s\n   %s\n", d.Term, oneLine(d.Definition, 300), d.URL)
+			fmt.Fprintf(&b, "%s: %s\n   %s\n", d.Term, whole(d.Definition), d.URL)
 		}
 		if len(out.Synonyms) > 0 {
 			fmt.Fprintf(&b, "Also searched as: %s\n", strings.Join(out.Synonyms, ", "))

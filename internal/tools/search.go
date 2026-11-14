@@ -176,7 +176,25 @@ func searchSummary(q string, out searchOut) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// oneLine shortens text to one line of at most n characters.
+// maxFieldChars bounds a field that answers the question (a setting's default or
+// description, a requirement, a role statement, a definition) in a text summary.
+// They're short in practice, so they're shown whole: some clients give the model only
+// the text summary, not the structured result, and a field cut short reads to it as
+// the docs being cut short.
+const maxFieldChars = 2000
+
+// whole puts a field on one line, whole, unless it's longer than maxFieldChars, when it
+// says where the rest is.
+func whole(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > maxFieldChars {
+		s = string(r[:maxFieldChars]) + " … (shortened here; read_doc has the rest)"
+	}
+	return s
+}
+
+// oneLine shortens text to one line of at most n characters, for excerpts such as
+// search snippets, which are only for choosing what to read.
 func oneLine(s string, n int) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if r := []rune(s); len(r) > n {

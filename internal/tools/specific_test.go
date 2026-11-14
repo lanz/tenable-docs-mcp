@@ -174,6 +174,45 @@ func TestRequirementsTool(t *testing.T) {
 	}
 }
 
+// The text summaries show the fields that answer a question whole. Some clients give
+// the model only the text, and a field cut short read to it as the docs being cut
+// short (Nessus's TCP 443 row lost its plugin-update half, and a setting's default
+// lost the setting it depends on).
+func TestSummariesShowFieldsWhole(t *testing.T) {
+	traffic := "Communicating with Tenable One Vulnerability Management (sensor.cloud.tenable.com or " +
+		"sensor.cloud.tenablecloud.cn). Communicating with the plugins.nessus.org server for plugin updates."
+	def := "30, or the Tenable Nessus scanner advanced setting max_hosts, whichever is smaller, when the scanner sets one"
+	desc := "Specifies the maximum number of hosts that a scanner scans at the same time. If you set Max simultaneous " +
+		"hosts per scan to more than the scanner's max_hosts setting, Tenable Nessus caps it at max_hosts."
+	cs := connect(t, buildIndexFrom(t, []fixturePage{
+		{enCur, "nessus/Content/PortRequirements.htm", []string{"Nessus"}, `<h1>Port Requirements</h1><h2 id="Ports">Nessus</h2>
+			<table><thead><tr><th>Port</th><th>Traffic</th></tr></thead><tbody>
+			<tr><td>TCP 443</td><td>` + traffic + `</td></tr></tbody></table>`},
+		{enCur, "nessus/Content/ScanSettings.htm", []string{"Nessus"}, `<h1>Advanced Scan Settings</h1>
+			<table><thead><tr><th>Setting</th><th>Default</th><th>Description</th></tr></thead><tbody>
+			<tr><td>Max simultaneous hosts per scan</td><td>` + def + `</td><td>` + desc + `</td></tr></tbody></table>`},
+	}))
+	var reqs requirementsResultOut
+	text := call(t, cs, "requirements", map[string]any{"query": "Nessus ports"}, &reqs)
+	if !strings.Contains(text, "Traffic: "+traffic) || strings.Contains(text, "…") {
+		t.Errorf("requirements summary:\n%s", text)
+	}
+	var settings settingsOut
+	text = call(t, cs, "find_setting", map[string]any{"query": "max simultaneous hosts per scan", "product": "Nessus"}, &settings)
+	if !strings.Contains(text, "default "+def) || !strings.Contains(text, desc) || strings.Contains(text, "…") {
+		t.Errorf("find_setting summary:\n%s", text)
+	}
+
+	// Past the cap, the summary says where the rest is.
+	long := strings.Repeat("word ", maxFieldChars)
+	if got := whole(long); len([]rune(got)) > maxFieldChars+60 || !strings.HasSuffix(got, "read_doc has the rest)") {
+		t.Errorf("whole(long) = …%s", got[len(got)-80:])
+	}
+	if got := whole("  two\n lines "); got != "two lines" {
+		t.Errorf("whole = %q", got)
+	}
+}
+
 func TestReleaseNotesTool(t *testing.T) {
 	cs := connect(t, buildIndexFrom(t, specificFixture))
 	var out releasesOut
