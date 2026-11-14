@@ -24,6 +24,7 @@ type compareIn struct {
 	Product     string `json:"product,omitempty" jsonschema:"the setting's product, by any of its names (with setting)"`
 	FromVersion string `json:"from_version" jsonschema:"the earlier version, such as 6.5"`
 	ToVersion   string `json:"to_version,omitempty" jsonschema:"the later version (default: the current one)"`
+	Heading     string `json:"heading,omitempty" jsonschema:"with url: only the section with this heading, with every line that changed rather than the first few"`
 }
 
 type versionedPage struct {
@@ -40,7 +41,8 @@ type sectionChange struct {
 	ToURL   string   `json:"to_url,omitempty"`
 	Added   []string `json:"added,omitempty" jsonschema:"lines the later version has and the earlier one doesn't"`
 	Removed []string `json:"removed,omitempty" jsonschema:"lines the earlier version has and the later one doesn't"`
-	More    int      `json:"more_lines,omitempty" jsonschema:"changed lines left out, to keep the answer short; read both versions for all of them"`
+	Changed []string `json:"changed,omitempty" jsonschema:"lines that changed, each shown once with [-removed words-] and {+added words+}; … stands for unchanged words left out"`
+	More    int      `json:"more_lines,omitempty" jsonschema:"changed lines left out, to keep the answer short; compare again with this section's heading for all of them"`
 }
 
 type settingChange struct {
@@ -65,9 +67,11 @@ func registerCompare(s *mcp.Server, env *Env) {
 		Name: "compare_versions",
 		Description: "Compare a page, or a setting, between two versions of an on-premises product (Security Center, " +
 			"Nessus, OT Security, Identity Exposure on-premises, and others with versioned guides). For a page, it " +
-			"lists the sections that changed, were added, or were removed, with the lines that differ; for a " +
-			"setting, how its default, values, and description changed. Give url (a page in any version) or " +
-			"setting, and from_version; to_version defaults to the current version. Cite both urls.",
+			"lists the sections that changed, were added, or were removed, with the lines that differ: a line that " +
+			"changed is shown once, with [-removed words-] and {+added words+}. For a setting, it shows how its " +
+			"default, values, and description changed. Give url (a page in any version) or setting, and " +
+			"from_version; to_version defaults to the current version. Each section shows its first few changed " +
+			"lines; give heading as well for every changed line in one section. Cite both urls.",
 		Annotations: readOnly("Compare versions"),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, in compareIn) (*mcp.CallToolResult, compareOut, error) {
 		if err := env.ready(); err != nil {
@@ -75,6 +79,12 @@ func registerCompare(s *mcp.Server, env *Env) {
 		}
 		if (in.URL == "") == (in.Setting == "") {
 			return nil, compareOut{}, fmt.Errorf("give url (a page) or setting (a setting's name), not both")
+		}
+		if in.Heading != "" && in.URL == "" {
+			return nil, compareOut{}, fmt.Errorf("heading picks a section of a page: give url too")
+		}
+		if err := checkLength("heading", in.Heading); err != nil {
+			return nil, compareOut{}, err
 		}
 		from, to := normVersion(in.FromVersion), normVersion(in.ToVersion)
 		if from == "" {
@@ -86,7 +96,7 @@ func registerCompare(s *mcp.Server, env *Env) {
 		var out compareOut
 		var err error
 		if in.URL != "" {
-			out, err = env.comparePage(ctx, in.URL, from, to)
+			out, err = env.comparePage(ctx, in.URL, from, to, in.Heading)
 		} else {
 			out, err = env.compareSetting(ctx, in.Setting, in.Product, from, to)
 		}
@@ -196,7 +206,7 @@ func sortedVersions(available map[string]index.PageRef) []string {
 	return vs
 }
 
-func (e *Env) comparePage(ctx context.Context, raw, from, to string) (compareOut, error) {
+func (e *Env) comparePage(ctx context.Context, raw, from, to, heading string) (compareOut, error) {
 	u, err := normalizeURL(raw)
 	if err != nil {
 		return compareOut{}, err
@@ -226,14 +236,60 @@ func (e *Env) comparePage(ctx context.Context, raw, from, to string) (compareOut
 		return compareOut{}, err
 	}
 	var changes []textdiff.Change
-	changes, out.Unchanged = textdiff.Sections(diffable(before), diffable(after))
+	if heading != "" {
+		b, a := withHeading(before, heading), withHeading(after, heading)
+		if len(b) == 0 && len(a) == 0 {
+			return compareOut{}, fmt.Errorf("neither version of this page has a section headed %q; its sections are: %s",
+				heading, strings.Join(headings(after, before), "; "))
+		}
+		changes, out.Unchanged = textdiff.SectionsAll(diffable(b), diffable(a))
+	} else {
+		changes, out.Unchanged = textdiff.Sections(diffable(before), diffable(after))
+	}
 	for _, c := range changes {
-		out.Sections = append(out.Sections, sectionChange(c))
+		out.Sections = append(out.Sections, sectionChange(textdiff.Pair(c)))
 	}
 	if len(out.Sections) == 0 {
-		out.Message = fmt.Sprintf("The page is the same in %s and %s.", out.From.Version, out.To.Version)
+		what := "The page is"
+		if heading != "" {
+			what = fmt.Sprintf("The section %q is", heading)
+		}
+		out.Message = fmt.Sprintf("%s the same in %s and %s.", what, out.From.Version, out.To.Version)
 	}
 	return out, nil
+}
+
+// sameHeading compares headings as textdiff matches sections: ignoring case and
+// spacing.
+func sameHeading(a, b string) bool {
+	return strings.EqualFold(strings.Join(strings.Fields(a), " "), strings.Join(strings.Fields(b), " "))
+}
+
+// withHeading is a page's sections with this heading.
+func withHeading(secs []index.Section, heading string) []index.Section {
+	var out []index.Section
+	for _, s := range secs {
+		if sameHeading(s.Heading, heading) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// headings lists the pages' section headings, each once, for an error message.
+func headings(pages ...[]index.Section) []string {
+	var out []string
+	for _, secs := range pages {
+		for _, s := range secs {
+			if h := strings.TrimSpace(s.Heading); h != "" && !slices.ContainsFunc(out, func(o string) bool { return sameHeading(o, h) }) {
+				out = append(out, h)
+			}
+		}
+	}
+	if len(out) > 40 {
+		out = append(out[:40], "…")
+	}
+	return out
 }
 
 // diffable is a page's sections, as textdiff compares them.
@@ -361,6 +417,9 @@ func compareSummary(out compareOut) string {
 				link = s.FromURL
 			}
 			fmt.Fprintf(&b, "\n%s: %s (%s)\n", upperFirstWord(s.Status), s.Heading, link)
+			for _, l := range s.Changed {
+				b.WriteString("~ " + l + "\n")
+			}
 			for _, l := range s.Added {
 				b.WriteString("+ " + l + "\n")
 			}
@@ -368,8 +427,11 @@ func compareSummary(out compareOut) string {
 				b.WriteString("- " + l + "\n")
 			}
 			if s.More > 0 {
-				fmt.Fprintf(&b, "  (%d more changed lines)\n", s.More)
+				fmt.Fprintf(&b, "  (%d more changed lines; compare with heading %q for all of them)\n", s.More, s.Heading)
 			}
+		}
+		if slices.ContainsFunc(out.Sections, func(s sectionChange) bool { return len(s.Changed) > 0 }) {
+			b.WriteString("\n~ marks a line that changed, with [-removed words-] and {+added words+}; … is unchanged text left out.\n")
 		}
 	}
 	if out.Message != "" {
