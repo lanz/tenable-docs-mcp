@@ -216,7 +216,7 @@ var placeholders = map[string]string{
 	"index": "DIR", "out": "DIR", "file": "FILE", "since": "DATE", "sites": "LIST",
 	"base": "URL", "url": "URL", "client": "NAME", "http": "ADDR", "source": "DIRS",
 	"guide-names": "FILE", "guide": "GUIDE", "product": "PRODUCT", "version": "VERSION",
-	"from-version": "VERSION", "to-version": "VERSION", "language": "LANG",
+	"from-version": "VERSION", "to-version": "VERSION", "language": "LANG", "heading": "HEADING",
 	"allow-host": "HOSTS", "client-ip-header": "HEADER",
 }
 

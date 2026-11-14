@@ -40,6 +40,25 @@ func TestComparePage(t *testing.T) {
 		t.Errorf("versions available = %v", out.Versions)
 	}
 
+	// One section, with every changed line.
+	out = compareOut{}
+	text = call(t, cs, "compare_versions", map[string]any{"url": en + "nessus/Content/Install.htm", "from_version": "10.5",
+		"heading": "install nessus  ON linux"}, &out)
+	if len(out.Sections) != 1 || out.Sections[0].Heading != "Install Nessus on Linux" || out.Sections[0].Status != "changed" {
+		t.Errorf("one section: %+v\n%s", out.Sections, text)
+	}
+	if _, isErr := callRaw(t, cs, "compare_versions", map[string]any{"url": en + "nessus/Content/Install.htm", "from_version": "10.5",
+		"heading": "Uninstall"}, nil); !isErr {
+		t.Error("a heading neither version has should fail")
+	}
+	if msg, isErr := callRaw(t, cs, "compare_versions", map[string]any{"url": en + "nessus/Content/Install.htm", "from_version": "10.5",
+		"heading": "Uninstall"}, nil); !isErr || !strings.Contains(msg, "Before you begin") {
+		t.Errorf("the error should list the sections: %q", msg)
+	}
+	if _, isErr := callRaw(t, cs, "compare_versions", map[string]any{"setting": "Max hosts", "from_version": "10.5", "heading": "x"}, nil); !isErr {
+		t.Error("heading without url should fail")
+	}
+
 	// From the older page's URL, the other way round.
 	out = compareOut{}
 	call(t, cs, "compare_versions", map[string]any{"url": en + "nessus/10_5/Content/Install.htm", "from_version": "v10.5", "to_version": "current"}, &out)
@@ -150,7 +169,7 @@ func TestWhatsChanged(t *testing.T) {
 	if status["Steps"] != "changed" || status["Before you begin"] != "removed" {
 		t.Errorf("sections = %+v", out.Changes[0].Sections)
 	}
-	if !strings.Contains(text, "updated: Install Nessus on Linux (Nessus)") || !strings.Contains(text, "+ Run the new installer.") {
+	if !strings.Contains(text, "updated: Install Nessus on Linux (Nessus)") || !strings.Contains(text, "~ Run the [-installer package.-] {+new installer.+}") {
 		t.Errorf("summary = %q", text)
 	}
 

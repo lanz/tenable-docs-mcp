@@ -17,6 +17,7 @@ import (
 
 	"github.com/lanz/tenable-docs-mcp/internal/index"
 	"github.com/lanz/tenable-docs-mcp/internal/search"
+	"github.com/lanz/tenable-docs-mcp/internal/textdiff"
 )
 
 type changesIn struct {
@@ -109,7 +110,7 @@ func registerChanges(s *mcp.Server, env *Env) {
 				for _, c := range cs {
 					cp := changedPage{Change: c.Change, At: c.At, Title: c.Title, Product: c.Product, Guide: c.Guide, URL: c.URL}
 					for _, s := range c.Sections {
-						cp.Sections = append(cp.Sections, sectionChange(s))
+						cp.Sections = append(cp.Sections, sectionChange(textdiff.Pair(s)))
 					}
 					out.Changes = append(out.Changes, cp)
 				}
@@ -194,6 +195,9 @@ func changesSummary(out changesOut) string {
 		fmt.Fprintf(&b, "\n  %s", c.URL)
 		for _, s := range c.Sections {
 			fmt.Fprintf(&b, "\n  %s: %s", upperFirstWord(s.Status), s.Heading)
+			for _, l := range s.Changed[:min(2, len(s.Changed))] {
+				b.WriteString("\n    ~ " + l)
+			}
 			for _, l := range s.Added[:min(2, len(s.Added))] {
 				b.WriteString("\n    + " + l)
 			}

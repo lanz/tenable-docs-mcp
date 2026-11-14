@@ -12,10 +12,12 @@ import (
 	"strings"
 )
 
-// Limits that keep a comparison short enough to read.
+// Limits that keep a comparison short enough to read. A line is a paragraph, list
+// item, or table row, kept whole up to MaxLineChars, so that Pair can show where it
+// changed: a line cut shorter could hide the change.
 const (
 	MaxLines     = 8
-	MaxLineChars = 300
+	MaxLineChars = 2000
 )
 
 // Section is one section of a page, as compared.
@@ -35,6 +37,10 @@ type Change struct {
 	ToURL   string   `json:"to_url,omitempty"`
 	Added   []string `json:"added,omitempty"`
 	Removed []string `json:"removed,omitempty"`
+	// Changed is what Pair makes of a removed line and the added line it became: the
+	// line once, with [-removed words-] and {+added words+}. Sections leaves it empty,
+	// and stores only Added and Removed.
+	Changed []string `json:"changed,omitempty"`
 	// More counts changed lines left out of Added and Removed.
 	More int `json:"more_lines,omitempty"`
 }
@@ -65,8 +71,14 @@ func Lines(md string) []string {
 
 // Sections matches two pages' sections by heading, in order, and returns the ones
 // that differ, in the later page's order and then the removed ones, with how many are
-// the same.
-func Sections(before, after []Section) ([]Change, int) {
+// the same. Each keeps at most MaxLines added and MaxLines removed lines.
+func Sections(before, after []Section) ([]Change, int) { return sections(before, after, MaxLines) }
+
+// SectionsAll is Sections with every changed line, for comparing one section in full.
+func SectionsAll(before, after []Section) ([]Change, int) { return sections(before, after, 0) }
+
+func sections(before, after []Section, maxLines int) ([]Change, int) {
+	clip := func(lines []string, more *int) []string { return clipN(lines, maxLines, more) }
 	key := func(s Section) string { return strings.ToLower(strings.Join(strings.Fields(s.Heading), " ")) }
 	pending := map[string][]int{}
 	for i, s := range before {
@@ -79,7 +91,7 @@ func Sections(before, after []Section) ([]Change, int) {
 		k := key(a)
 		if len(pending[k]) == 0 {
 			c := Change{Heading: a.Heading, Status: "added", ToURL: a.URL}
-			c.Added = Clip(Lines(a.Body), &c.More)
+			c.Added = clip(Lines(a.Body), &c.More)
 			changes = append(changes, c)
 			continue
 		}
@@ -93,13 +105,13 @@ func Sections(before, after []Section) ([]Change, int) {
 			continue
 		}
 		c := Change{Heading: a.Heading, Status: "changed", FromURL: b.URL, ToURL: a.URL}
-		c.Added, c.Removed = Clip(added, &c.More), Clip(removed, &c.More)
+		c.Added, c.Removed = clip(added, &c.More), clip(removed, &c.More)
 		changes = append(changes, c)
 	}
 	for i, b := range before {
 		if !matched[i] {
 			c := Change{Heading: b.Heading, Status: "removed", FromURL: b.URL}
-			c.Removed = Clip(Lines(b.Body), &c.More)
+			c.Removed = clip(Lines(b.Body), &c.More)
 			changes = append(changes, c)
 		}
 	}
@@ -165,10 +177,13 @@ func Diff(a, b []string) (added, removed []string) {
 
 // Clip keeps the first MaxLines lines, each shortened to MaxLineChars, and counts the
 // rest in more.
-func Clip(lines []string, more *int) []string {
+func Clip(lines []string, more *int) []string { return clipN(lines, MaxLines, more) }
+
+// clipN is Clip with at most n lines, or all of them when n is 0.
+func clipN(lines []string, n int, more *int) []string {
 	var out []string
 	for i, l := range lines {
-		if i == MaxLines {
+		if n > 0 && i == n {
 			if more != nil {
 				*more += len(lines) - i
 			}
