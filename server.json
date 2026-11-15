@@ -9,6 +9,13 @@
     "id": "1448588669"
   },
   "websiteUrl": "https://github.com/lanz/tenable-docs-mcp",
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/lanz/tenable-docs-mcp/RELEASE_TAG/docs/images/icon.png",
+      "mimeType": "image/png",
+      "sizes": ["512x512"]
+    }
+  ],
   "version": "0.0.0-dev",
   "packages": [
     {

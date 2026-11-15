@@ -6,6 +6,9 @@
 package server
 
 import (
+	_ "embed"
+	"encoding/base64"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/lanz/tenable-docs-mcp/internal/crawl"
@@ -23,6 +26,19 @@ const Name = "tenable-docs-mcp"
 
 // ProjectURL is reported to MCP clients as the server's website.
 const ProjectURL = "https://github.com/lanz/tenable-docs-mcp"
+
+// iconPNG is the server's icon, 128 pixels square, which MCP clients that show
+// servers' icons display. It's sent as a data URI, so showing it fetches nothing. The
+// 512-pixel version, for the extension and the MCP Registry, is docs/images/icon.png.
+//
+//go:embed icon.png
+var iconPNG []byte
+
+// Icons are the server's icons, as MCP clients get them.
+func Icons() []mcp.Icon {
+	return []mcp.Icon{{Source: "data:image/png;base64," + base64.StdEncoding.EncodeToString(iconPNG),
+		MIMEType: "image/png", Sizes: []string{"128x128"}}}
+}
 
 const instructions = `Cited answers from Tenable's product documentation (docs.tenable.com and its translated sites).
 Search the docs before answering a question about a Tenable product, cite the link you used, and say when the docs
@@ -98,7 +114,7 @@ func New(opts Options) *mcp.Server {
 		}
 	}
 	s := mcp.NewServer(
-		&mcp.Implementation{Name: Name, Title: "Tenable Docs MCP", Version: version.Get(), WebsiteURL: ProjectURL},
+		&mcp.Implementation{Name: Name, Title: "Tenable Docs MCP", Version: version.Get(), WebsiteURL: ProjectURL, Icons: Icons()},
 		&mcp.ServerOptions{Instructions: instr, CompletionHandler: env.Complete},
 	)
 	if !opts.Hosted {
