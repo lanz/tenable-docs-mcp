@@ -139,8 +139,10 @@ func (t *Tx) Put(d Doc) (changed bool, err error) {
 	newHash := d.hash()
 	var oldID int64
 	var oldHash string
+	var old pageState
 	var oldSections []textdiff.Section
-	err = t.tx.QueryRowContext(t.ctx, "SELECT id, content_hash FROM pages WHERE url = ?", p.URL).Scan(&oldID, &oldHash)
+	err = t.tx.QueryRowContext(t.ctx, "SELECT id, content_hash, title, product, guide FROM pages WHERE url = ?", p.URL).
+		Scan(&oldID, &oldHash, &old.title, &old.product, &old.guide)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 	case err != nil:
@@ -222,6 +224,11 @@ func (t *Tx) Put(d Doc) (changed bool, err error) {
 			newSections[i] = textdiff.Section{Heading: s.Heading, URL: s.URL, Body: s.Markdown}
 		}
 		sectionChanges, _ = textdiff.Sections(oldSections, newSections)
+		// The page is rewritten either way, but an update only its sitemap date or
+		// table of contents changed isn't history (see worthRecording).
+		if !worthRecording(sectionChanges, old, pageState{title: p.Title, product: d.Product, guide: d.Guide.Path}) {
+			return true, nil
+		}
 	}
 	if err := t.recordChange(Change{URL: p.URL, Change: change, At: now(), OldHash: oldHash, NewHash: newHash,
 		Title: p.Title, Product: d.Product, Guide: d.Guide.Path, Sections: sectionChanges}); err != nil {

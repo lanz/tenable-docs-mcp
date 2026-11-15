@@ -164,6 +164,9 @@ func (s *Shard) recordDifferences(ctx context.Context, tx *Tx, old *Shard, at st
 				return err
 			}
 			secs, _ := textdiff.Sections(oldSecs, newSecs)
+			if !worthRecording(secs, b, a) {
+				continue
+			}
 			if err := tx.recordChange(Change{URL: url, Change: "updated", At: at, OldHash: b.hash, NewHash: a.hash,
 				Title: a.title, Product: a.product, Guide: a.guide, Sections: secs}); err != nil {
 				return err
@@ -171,6 +174,16 @@ func (s *Shard) recordDifferences(ctx context.Context, tx *Tx, old *Shard, at st
 		}
 	}
 	return nil
+}
+
+// worthRecording reports whether an update changed something a reader of the history
+// would see: a section, or the page's title, product, or guide. A page's content hash
+// also covers its sitemap date and its place in the table of contents, so that a page
+// is rewritten when they change. But a docs deploy that republishes a guide moves the
+// sitemap dates of pages whose text didn't change, and recording those as updates
+// buried real changes under thousands of empty ones.
+func worthRecording(secs []textdiff.Change, before, after pageState) bool {
+	return len(secs) > 0 || before.title != after.title || before.product != after.product || before.guide != after.guide
 }
 
 // statesOf reads pages from a shard, or from a transaction's shard.

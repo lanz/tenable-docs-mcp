@@ -136,6 +136,69 @@ func TestHistoryAcrossRebuilds(t *testing.T) {
 	}
 }
 
+// A docs deploy that republishes a guide moves its pages' sitemap dates, though their
+// text is the same. The pages are rewritten, but nothing is recorded: the history
+// once listed thousands of such pages as updated, with nothing changed.
+func TestSitemapDateAloneIsNoChange(t *testing.T) {
+	ix, err := Open(filepath.Join(t.TempDir(), "index"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ix.Close()
+	u := "https://docs.tenable.com/nessus/Content/Install.htm"
+	doc := func(body, lastmod string) Doc {
+		d := makeDoc(t, "en", u, body)
+		d.Entry.LastMod = lastmod
+		return d
+	}
+	body := `<h1>Install</h1><h2 id="Steps">Steps</h2><p>Run the installer.</p>`
+	build := func(d Doc) {
+		t.Helper()
+		k := Key{Site: "en"}
+		b, err := ix.Build(k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		put(t, b, d)
+		if err := b.TakeHistory(ctx, ix.Shard(k)); err != nil {
+			t.Fatal(err)
+		}
+		if err := ix.Install(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// An update from a snapshot: the same page, with a new sitemap date.
+	build(doc(body, "2026-11-01"))
+	build(doc(body, "2026-11-12"))
+	if cs := changesIn(t, ix); len(cs) != 0 {
+		t.Errorf("a new sitemap date was recorded as %+v", cs)
+	}
+	// A real change still is.
+	build(doc(`<h1>Install</h1><h2 id="Steps">Steps</h2><p>Run the new installer.</p>`, "2026-11-13"))
+	if cs := changesIn(t, ix); len(cs) != 1 || cs[0].Change != "updated" || len(cs[0].Sections) != 1 {
+		t.Errorf("a real change: %+v", cs)
+	}
+
+	// In place, as a crawl or a refresh writes pages: the same, and a title change
+	// alone is a change.
+	s := openTest(t, Key{Site: "en"})
+	put(t, s, doc(body, "2026-11-01"))
+	put(t, s, doc(body, "2026-11-12"))
+	put(t, s, doc(`<h1>Install Nessus</h1><h2 id="Steps">Steps</h2><p>Run the installer.</p>`, "2026-11-12"))
+	cs, err := s.Changes(ctx, ChangeQuery{Since: "2000-01-01", Sections: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cs) != 2 || cs[0].Change != "updated" || cs[0].Title != "Install Nessus" || cs[1].Change != "added" {
+		t.Errorf("in place: %+v", cs)
+	}
+	var lastmod string
+	if err := s.db.QueryRowContext(ctx, "SELECT lastmod FROM pages WHERE url = ?", u).Scan(&lastmod); err != nil || lastmod != "2026-11-12" {
+		t.Errorf("the page wasn't rewritten with its new sitemap date: %q (%v)", lastmod, err)
+	}
+}
+
 func TestPutRecordsSectionChanges(t *testing.T) {
 	s := openTest(t, Key{Site: "en"})
 	u := "https://docs.tenable.com/nessus/Content/Install.htm"

@@ -504,6 +504,7 @@ Each shard keeps a year of changes: the pages added, updated, or removed, and fo
 
 - **An update from the prebuilt index** builds each changed shard anew. Before it's swapped in, it takes the old shard's history, and the differences between the two are recorded as the update's changes. A rebuilt shard's own records, which list every page as added, aren't kept.
 - **A crawl, a refresh, or a page fetched on demand** changes the shard in place, and records each change as it's made.
+- **An update is recorded** when a section changed, or the page's title, product, or guide did. A page whose only change is its sitemap date or its place in the table of contents, as when a docs deploy republishes a guide, is rewritten but not recorded.
 - **The history begins** when the index is first built, which the shard records as `history_since`. For a period before that, `whats_changed` lists the pages the sitemap dates in it, without what changed.
 - **Changed lines** are recorded whole, up to 2,000 characters, and at most eight added and eight removed per section. `whats_changed` shows a line that changed once, as `compare_versions` does, with `[-removed words-]` and `{+added words+}`. Changes recorded by releases before 1.0.1 kept only each line's first 300 characters, and still show that way.
 
