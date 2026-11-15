@@ -80,7 +80,9 @@ func manifest(version string) (map[string]any, error) {
 		"documentation": server.ProjectURL + "#readme",
 		"support":       server.ProjectURL + "/issues",
 		"license":       "GPL-3.0-or-later",
-		"keywords":      []string{"tenable", "documentation", "docs", "nessus", "vulnerability management", "security center", "search"},
+		// build-release.sh copies docs/images/icon.png into the bundle.
+		"icon":     "icon.png",
+		"keywords": []string{"tenable", "documentation", "docs", "nessus", "vulnerability management", "security center", "search"},
 		// Feedback and gap reports the user chooses to send go to Tenable.
 		"privacy_policies": []string{"https://www.tenable.com/privacy-policy"},
 		"server": map[string]any{

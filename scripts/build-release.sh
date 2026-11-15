@@ -53,6 +53,7 @@ cp "dist/bin/linux_amd64/$cmd" "$bundle/server/linux/"
 chmod +x "$bundle/server/darwin/$cmd" "$bundle/server/linux/$cmd"
 go run ./scripts/mcpb -version "$version" -out "$bundle/manifest.json"
 cp LICENSE README.md "$bundle/"
+cp docs/images/icon.png "$bundle/icon.png"
 mcpb_file="${cmd}_${version#v}.mcpb"
 (cd "$bundle" && zip -qrX "../$mcpb_file" .)
 # The Linux binaries, for the container image (see Dockerfile).
