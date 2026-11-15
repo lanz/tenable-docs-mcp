@@ -718,6 +718,8 @@ go test ./...
 go test -race ./...    # needs cgo
 ```
 
+The project's images are in `docs/images/`: `icon.png` is the icon (the extension bundles it, and the MCP Registry entry links to it; `internal/server/icon.png` is a 128-pixel copy the server sends to clients), and `social-preview.png` is the repository's link preview, which is set by hand under **Settings > Social preview**.
+
 CI runs `go vet` and the tests on Linux, macOS, and Windows with the latest stable Go, and on Linux with the minimum version in `go.mod` (with the race detector everywhere but Windows), plus `gofmt`, `go mod tidy -diff`, [staticcheck](https://staticcheck.dev), [govulncheck](https://go.dev/doc/security/vuln/), and a cross-platform release build (`scripts/build-release.sh`).
 
 Fuzz targets: `FuzzParse` (`internal/page`), `FuzzParseLang` and `FuzzSearch` (`internal/search`), and `FuzzParseDefine` (`internal/site`):
