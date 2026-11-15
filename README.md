@@ -1,6 +1,8 @@
 # Tenable Docs MCP
 
-<img src="docs/images/help-top.png" alt="The top of tenable-docs-mcp's help: the Tenable Docs MCP wordmark, the tagline &quot;Cited answers from Tenable's product documentation&quot; with version v1.0.0, and the commands for asking the docs, such as search, read, setting, role, requirements, and release-notes." width="695">
+<p align="center">
+  <img src="docs/images/social-preview.png" alt="A terminal window showing tenable-docs-mcp's help: the Tenable Docs MCP wordmark in yellow, the tagline &quot;Cited answers from Tenable's product documentation&quot;, and five commands: search, setting, role, requirements, and compare." width="720">
+</p>
 
 <details>
 <summary>The full help</summary>
@@ -82,7 +84,7 @@ Download `tenable-docs-mcp_<version>.mcpb` from the release, and open it, or dra
 <details>
 <summary>The extension in Claude Desktop</summary>
 
-<img src="docs/images/claude-desktop-extension.png" alt="Claude Desktop's Settings, on the Extensions page: Tenable Docs MCP is listed under &quot;Installed on your computer&quot;, with a Configure button." width="600">
+<img src="docs/images/claude-desktop-extension.png" alt="Claude Desktop's Settings, on the Extensions page: Tenable Docs MCP, with its icon, is listed under &quot;Installed on your computer&quot;, with a Configure button." width="600">
 
 </details>
 
@@ -767,7 +769,7 @@ go test ./...
 go test -race ./...    # needs cgo
 ```
 
-The project's images are in `docs/images/`: `icon.png` is the icon (the extension bundles it, and the MCP Registry entry links to it; `internal/server/icon.png` is a 128-pixel copy the server sends to clients), and `social-preview.png` is the repository's link preview, which is set by hand under **Settings > Social preview**.
+The project's images are in `docs/images/`: `icon.png` is the icon (the extension bundles it, and the MCP Registry entry links to it; `internal/server/icon.png` is a 128-pixel copy the server sends to clients), and `social-preview.png` is the banner at the top of this README and the repository's link preview, which is set by hand under **Settings > Social preview**.
 
 CI runs `go vet` and the tests on Linux, macOS, and Windows with the latest stable Go, and on Linux with the minimum version in `go.mod` (with the race detector everywhere but Windows), plus `gofmt`, `go mod tidy -diff`, [staticcheck](https://staticcheck.dev), [govulncheck](https://go.dev/doc/security/vuln/), and a cross-platform release build (`scripts/build-release.sh`).
 
